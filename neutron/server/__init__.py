@@ -32,7 +32,8 @@ gettextutils.install('neutron', lazy=True)
 
 
 def main():
-    eventlet.monkey_patch()
+    #eventlet.monkey_patch()
+    eventlet.monkey_patch(os=False, thread=False)
 
     # the configuration will be read into the cfg.CONF global data structure
     config.parse(sys.argv[1:])

@@ -49,6 +49,7 @@ class LbaasAgentService(rpc_service.Service):
 
 def main():
     eventlet.monkey_patch()
+    #eventlet.monkey_patch(os=False, thread=False)
     cfg.CONF.register_opts(OPTS)
     cfg.CONF.register_opts(manager.OPTS)
     # import interface options just in case the driver uses namespaces
@@ -57,7 +58,6 @@ def main():
     config.register_agent_state_opts_helper(cfg.CONF)
     config.register_root_helper(cfg.CONF)
 
-    cfg.CONF(project='neutron')
     config.setup_logging(cfg.CONF)
     legacy.modernize_quantum_config(cfg.CONF)
 

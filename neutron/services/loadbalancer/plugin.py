@@ -50,7 +50,7 @@ class LoadBalancerPlugin(ldb.LoadBalancerPluginDb,
 
     def __init__(self):
         """Initialization for the loadbalancer service plugin."""
-
+        LOG.error("TEST!!!!!!!")
         qdbapi.register_models()
         self.service_type_manager = st_db.ServiceTypeManager.get_instance()
         self._load_drivers()

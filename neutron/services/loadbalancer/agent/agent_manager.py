@@ -93,6 +93,8 @@ class LbaasAgentManager(periodic_task.PeriodicTasks):
             except ImportError:
                 msg = _('Error importing loadbalancer device driver: %s')
                 raise SystemExit(msg % driver)
+            except Exception as e:
+                msg = e.message
 
             driver_name = driver_inst.get_name()
             if driver_name not in self.device_drivers:
