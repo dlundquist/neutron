@@ -28,8 +28,9 @@ TYPE_SERVER_REQUEST = 4
 
 class NamespaceProcessOnHostBackend(base_backend.HaproxyBackend):
 
-    def __init__(self, conf):
+    def __init__(self, conf, plugin_rpc):
         self.conf = conf
+        self.plugin_rpc = plugin_rpc
         self.state_path = conf.haproxy.loadbalancer_state_path
         self.root_helper = config.get_root_helper(conf)
         try:

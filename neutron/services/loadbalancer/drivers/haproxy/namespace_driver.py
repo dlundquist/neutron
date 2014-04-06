@@ -60,7 +60,9 @@ class HaproxyNSDriver(agent_device_driver.AgentDeviceDriver):
         self.conf = conf
         self.plugin_rpc = plugin_rpc
         try:
-            backend = importutils.import_object(conf.haproxy.backend, conf)
+            backend = importutils.import_object(conf.haproxy.backend,
+                                                conf,
+                                                plugin_rpc)
         except ImportError:
             with excutils.save_and_reraise_exception():
                 msg = (_('Error importing haproxy backend: %s')
