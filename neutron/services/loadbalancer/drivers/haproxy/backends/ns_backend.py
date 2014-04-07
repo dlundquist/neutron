@@ -14,7 +14,8 @@ from neutron.openstack.common import log as logging
 from neutron.plugins.common import constants
 from neutron.services.loadbalancer import constants as lb_const
 from neutron.services.loadbalancer.drivers.haproxy import cfg as hacfg
-from neutron.services.loadbalancer.drivers.haproxy.backends import base_backend
+from neutron.services.loadbalancer.drivers.haproxy.backends import \
+    abstract_backend
 
 
 LOG = logging.getLogger(__name__)
@@ -26,7 +27,7 @@ TYPE_BACKEND_REQUEST = 2
 TYPE_SERVER_REQUEST = 4
 
 
-class NamespaceProcessOnHostBackend(base_backend.HaproxyBackend):
+class NamespaceProcessOnHostBackend(abstract_backend.HaproxyBackend):
 
     def __init__(self, conf, plugin_rpc):
         self.conf = conf
