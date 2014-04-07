@@ -93,6 +93,9 @@ class NamespaceProcessOnHostBackend(abstract_backend.HaproxyBackend):
                 pass
         return False
 
+    def get_config(self, logical_config):
+        pass
+
     def get_stats(self, logical_config):
         pool_id = logical_config['pool']['id']
         socket_path = self._get_state_file_path(pool_id, 'sock')

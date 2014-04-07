@@ -28,6 +28,10 @@ class HaproxyBackend(object):
         pass
 
     @abc.abstractmethod
+    def get_config(self, logical_config):
+        pass
+
+    @abc.abstractmethod
     def get_stats(self, logical_config):
         """Returns haproxy statistics."""
         pass
