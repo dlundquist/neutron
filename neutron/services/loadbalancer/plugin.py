@@ -105,6 +105,35 @@ class LoadBalancerPlugin(ldb.LoadBalancerPluginDb,
     def get_plugin_description(self):
         return "Neutron LoadBalancer Service Plugin"
 
+    def create_lb(self, context, lb):
+        lb = lb.get('lb')
+        vip = lb.get('vip')
+        vip['provider'] = attrs.ATTR_NOT_SPECIFIED
+        pool = lb.get('pool')
+        pool['provider'] = attrs.ATTR_NOT_SPECIFIED
+        pool_members = pool.get('members')
+        health_monitors = pool.get('health_monitors')
+        pool = {'pool': pool}
+        ret_pool = self.create_pool(context, pool)
+        pool_id = ret_pool.get('id')
+        for member in pool_members:
+            member['pool_id'] = pool_id
+        ret_mems = [self.create_member(context, {'member': member})
+                    for member in pool_members]
+        ret_hms = [self.create_health_monitor(context, {'health_monitor': hm})
+                   for hm in health_monitors]
+        for ret_hm in ret_hms:
+            self.create_pool_health_monitor(context,
+                                            {'health_monitor': ret_hm},
+                                            pool_id)
+        vip['pool_id'] = pool_id
+        vip = {'vip': vip}
+        ret_vip = self.create_vip(context, vip)
+        ret_pool['members'] = ret_mems
+        ret_pool['vip_id'] = ret_vip.get('id')
+        ret_pool['health_monitors'] = ret_hms
+        return {'vip': ret_vip, 'pool': ret_pool}
+
     def create_vip(self, context, vip):
         v = super(LoadBalancerPlugin, self).create_vip(context, vip)
         driver = self._get_driver_for_pool(context, v['pool_id'])

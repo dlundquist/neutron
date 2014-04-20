@@ -283,6 +283,34 @@ RESOURCE_ATTRIBUTE_MAP = {
     }
 }
 
+RESOURCE_ATTRIBUTE_MAP['lbs'] = {
+    'id': {'allow_post': False, 'allow_put': False,
+           'validate': {'type:uuid': None},
+           'is_visible': True, 'primary_key': True},
+    'tenant_id': {'allow_post': True, 'allow_put': False,
+                  'validate': {'type:string': None},
+                  'required_by_policy': True,
+                  'is_visible': True},
+    'name': {'allow_post': True, 'allow_put': True,
+             'validate': {'type:string': None},
+             'default': '',
+             'is_visible': True},
+    'vip': {'allow_post': True, 'allow_put': True,
+            'validate': {
+                'type:dict_or_empty': {
+                    #RESOURCE_ATTRIBUTE_MAP['vips']
+                }
+            }, 'is_visible': True
+            },
+    'pool': {'allow_post': True, 'allow_put': True,
+             'validate': {
+                 'type:dict_or_empty': {
+                     #RESOURCE_ATTRIBUTE_MAP['pools']
+                 }
+             }, 'is_visible': True
+             }
+}
+
 SUB_RESOURCE_ATTRIBUTE_MAP = {
     'health_monitors': {
         'parent': {'collection_name': 'pools',
@@ -403,6 +431,10 @@ class LoadBalancerPluginBase(ServicePluginBase):
 
     def get_plugin_description(self):
         return 'LoadBalancer service plugin'
+
+    @abc.abstractmethod
+    def create_lb(self, context, lb):
+        pass
 
     @abc.abstractmethod
     def get_vips(self, context, filters=None, fields=None):
