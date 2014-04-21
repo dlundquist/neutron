@@ -243,7 +243,8 @@ RESOURCE_ATTRIBUTE_MAP = {
                       'required_by_policy': True,
                       'is_visible': True},
         'type': {'allow_post': True, 'allow_put': False,
-                 'validate': {'type:values': ['PING', 'TCP', 'HTTP', 'HTTPS']},
+                 'validate': {'type:values': ['PING', 'TCP', 'HTTP', 'HTTPS',
+                                              'DILLHOLE']},
                  'is_visible': True},
         'delay': {'allow_post': True, 'allow_put': True,
                   'validate': {'type:non_negative': None},
@@ -297,15 +298,56 @@ RESOURCE_ATTRIBUTE_MAP['lbs'] = {
              'is_visible': True},
     'vip': {'allow_post': True, 'allow_put': True,
             'validate': {
-                'type:dict_or_empty': {
-                    #RESOURCE_ATTRIBUTE_MAP['vips']
+                'type:dict': {
+                    'name': {'validate': {'type:string': None},
+                             'required': True},
+                    'description': {'validate': {'type:string': None},
+                                    'required': True,},
+                    'subnet_id': {'validate': {'type:uuid': None},
+                                  'required': True},
+                    'protocol_port': {'validate': {'type:range': [0, 65535]},
+                                      'convert_to': attr.convert_to_int,
+                                      'required': True},
+                    'protocol': {'validate': {'type:values': ['TCP',
+                                                              'HTTP',
+                                                              'HTTPS']},
+                                 'required': True},
+                    'session_persistence': {'convert_to': attr.convert_none_to_empty_dict,
+                                            'validate': {
+                                                'type:dict_or_empty': {
+                                                    'type': {'type:values': ['APP_COOKIE',
+                                                                             'HTTP_COOKIE',
+                                                                             'SOURCE_IP'],
+                                                             'required': True},
+                                                    'cookie_name': {'type:string': None,
+                                                                    'required': False}}},
+                                            'required': True},
+                    'connection_limit': {'convert_to': attr.convert_to_int,
+                                         'required': True},
+                    'admin_state_up': {'convert_to': attr.convert_to_boolean,
+                                       'required': True}
                 }
             }, 'is_visible': True
             },
     'pool': {'allow_post': True, 'allow_put': True,
              'validate': {
-                 'type:dict_or_empty': {
-                     #RESOURCE_ATTRIBUTE_MAP['pools']
+                 'type:dict': {
+                     'name': {'validate': {'type:string': None},
+                              'required': True},
+                     'description': {'validate': {'type:string': None},
+                                     'required': True, 'default': ''},
+                     'subnet_id': {'validate': {'type:uuid': None},
+                                   'required': True},
+                     'protocol': {'validate': {'type:values': ['TCP',
+                                                               'HTTP',
+                                                               'HTTPS']},
+                                  'required': True},
+                     'lb_method': {'validate': {'type:string': None},
+                                   'required': True},
+                     'members': {'required': True},
+                     'health_monitors': {'required': True},
+                     'admin_state_up': {'convert_to': attr.convert_to_boolean,
+                                        'required': True}
                  }
              }, 'is_visible': True
              }
