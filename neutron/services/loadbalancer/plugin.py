@@ -140,6 +140,9 @@ class LoadBalancerPlugin(ldb.LoadBalancerPluginDb,
         ret_pool['health_monitors'] = ret_hms
         return {'vip': ret_vip, 'pool': ret_pool}
 
+    def get_lbs(self, context, filters=None, fields=None):
+        pass
+
     def create_vip(self, context, vip):
         v = super(LoadBalancerPlugin, self).create_vip(context, vip)
         driver = self._get_driver_for_pool(context, v['pool_id'])
