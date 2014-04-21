@@ -14,6 +14,7 @@
 #    under the License.
 #
 # @author: Avishay Balderman, Radware
+import time
 
 from neutron.api.v2 import attributes as attrs
 from neutron.common import exceptions as n_exc
@@ -118,6 +119,11 @@ class LoadBalancerPlugin(ldb.LoadBalancerPluginDb,
         pool_id = ret_pool.get('id')
         for member in pool_members:
             member['pool_id'] = pool_id
+        db_pool = self.get_pool(context, pool_id)
+        while (db_pool.get('provider') is None or
+               len(db_pool['provider'])) == 0:
+            time.sleep(1)
+            db_pool = self.get_pool(context, pool_id)
         ret_mems = [self.create_member(context, {'member': member})
                     for member in pool_members]
         ret_hms = [self.create_health_monitor(context, {'health_monitor': hm})
