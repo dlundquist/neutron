@@ -53,7 +53,7 @@ def upgrade(active_plugins=None, options=None):
     lb_prots_table = sasql.table(u'loadbalancing_protocols',
                                  sa.Column(u'name', sa.String,
                                            primary_key=True,
-                                           nullable=True),
+                                           nullable=False),
                                  sa.Column(u'description',
                                            sa.String,
                                            nullable=True))
@@ -94,7 +94,7 @@ def upgrade(active_plugins=None, options=None):
     op.create_table(
         u'loadbalancerlistenerassociations',
         sa.Column(u'loadbalancer_id', sa.String(255), nullable=False),
-        sa.Column(u'listener_id', sa.String(255), nullable=True),
+        sa.Column(u'listener_id', sa.String(255), nullable=False),
         sa.ForeignKeyConstraint(['loadbalancer_id'], ['loadbalancers.id']),
         sa.ForeignKeyConstraint(['listener_id'], ['listeners.id']),
         sa.PrimaryKeyConstraint(u'loadbalancer_id', u'listener_id')
@@ -103,7 +103,7 @@ def upgrade(active_plugins=None, options=None):
     op.create_table(
         u'listenerpoolassociations',
         sa.Column(u'listener_id', sa.String(255), nullable=False),
-        sa.Column(u'pool_id', sa.String(255), nullable=True),
+        sa.Column(u'pool_id', sa.String(255), nullable=False),
         sa.ForeignKeyConstraint(['listener_id'], ['listeners.id']),
         sa.ForeignKeyConstraint(['pool_id'], ['pools.id']),
         sa.PrimaryKeyConstraint(u'listener_id', u'pool_id')

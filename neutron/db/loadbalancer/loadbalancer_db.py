@@ -93,6 +93,48 @@ class Vip(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant,
     port = orm.relationship(models_v2.Port)
 
 
+class LoadBalancer(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
+    """Represents a v2 neutron loadbalancer."""
+    name = sa.Column(sa.String(255))
+    description = sa.Column(sa.String(255))
+    vip_port_id = sa.Column(sa.String(255))
+    connection_limit = sa.Column(sa.Integer)
+    status = sa.Column(sa.String(255))
+    admin_state_up = sa.Column(sa.Boolean(), nullable=False)
+    loadbalancers = orm.relationship('loadbalancerlistenerassociations',
+                                     backref="loadbalancers")
+
+
+class Listener(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
+    """Represents a v2 neutron listener."""
+    default_pool_id = sa.Column(sa.String(255))
+    protocol = sa.Column(sa.String(255))
+    protocol_port = sa.Column(sa.Integer)
+    admin_state_up = sa.Column(sa.Boolean(), nullable=False)
+    loadbalancers = orm.relationship('LoadBalancerListenerAssociations',
+                                     backref="loadbalancers")
+
+
+class LoadBalancerListenerAssociations(model_base.BASEV2):
+    """Many-to-Many association between LoadBalancer and Listener."""
+    loadbalancer_id = sa.Column(sa.String(36),
+                                sa.ForeignKey("loadbalancers.id"),
+                                primary_key=True)
+    listener_id = sa.Column(sa.String(36),
+                            sa.ForeignKey("listeners.id"),
+                            primary_key=True)
+
+
+class ListenerPoolAssociations(model_base.BASEV2):
+    """Many-to-Many association between Listener and Pool."""
+    loadbalancer_id = sa.Column(sa.String(36),
+                                sa.ForeignKey("listeners.id"),
+                                primary_key=True)
+    listener_id = sa.Column(sa.String(36),
+                            sa.ForeignKey("pools.id"),
+                            primary_key=True)
+
+
 class Member(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant,
              models_v2.HasStatusDescription):
     """Represents a v2 neutron loadbalancer member."""
@@ -133,7 +175,6 @@ class Pool(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant,
                                cascade="all, delete-orphan")
     monitors = orm.relationship("PoolMonitorAssociation", backref="pools",
                                 cascade="all, delete-orphan")
-    vip = orm.relationship(Vip, backref='pool')
 
     provider = orm.relationship(
         st_db.ProviderResourceAssociation,
@@ -142,6 +183,9 @@ class Pool(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant,
         primaryjoin="Pool.id==ProviderResourceAssociation.resource_id",
         foreign_keys=[st_db.ProviderResourceAssociation.resource_id]
     )
+
+    listeners = orm.relationship("ListenerPoolAssociation",
+                                 backref="listeners")
 
 
 class HealthMonitor(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
