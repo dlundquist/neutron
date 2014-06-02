@@ -93,6 +93,48 @@ class Vip(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant,
     port = orm.relationship(models_v2.Port)
 
 
+class LoadBalancerListenerAssociation(model_base.BASEV2):
+    """Many-to-Many association between LoadBalancer and Listener."""
+    loadbalancer_id = sa.Column(sa.String(36),
+                                sa.ForeignKey("loadbalancers.id"),
+                                primary_key=True)
+    listener_id = sa.Column(sa.String(36),
+                            sa.ForeignKey("listeners.id"),
+                            primary_key=True)
+
+
+class LoadBalancer(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
+    """Represents a v2 neutron loadbalancer."""
+    name = sa.Column(sa.String(255))
+    description = sa.Column(sa.String(255))
+    vip_port_id = sa.Column(sa.String(255))
+    connection_limit = sa.Column(sa.Integer)
+    status = sa.Column(sa.String(255))
+    admin_state_up = sa.Column(sa.Boolean(), nullable=False)
+    listeners = orm.relationship("Listener",
+                                 secondary="loadbalancerlistenerassociations",
+                                 backref="loadbalancers")
+
+
+class Listener(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
+    """Represents a v2 neutron listener."""
+    default_pool_id = sa.Column(sa.String(255), sa.ForeignKey('pools.id'))
+    protocol = sa.Column(sa.String(255))
+    protocol_port = sa.Column(sa.Integer)
+    admin_state_up = sa.Column(sa.Boolean(), nullable=False)
+    default_pool = orm.relationship("Pool", backref="listeners")
+
+
+class ListenerPoolAssociation(model_base.BASEV2):
+    """Many-to-Many association between Listener and Pool."""
+    loadbalancer_id = sa.Column(sa.String(36),
+                                sa.ForeignKey("listeners.id"),
+                                primary_key=True)
+    listener_id = sa.Column(sa.String(36),
+                            sa.ForeignKey("pools.id"),
+                            primary_key=True)
+
+
 class Member(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant,
              models_v2.HasStatusDescription):
     """Represents a v2 neutron loadbalancer member."""
@@ -339,6 +381,14 @@ class LoadBalancerPluginDb(loadbalancer.LoadBalancerPluginBase,
 
             port = self._core_plugin.create_port(context, {'port': port_data})
             vip_db.port_id = port['id']
+
+    def create_load_balancer_from_vip(self, context, vip):
+        v = vip['vip']
+        tenant_id = self._get_tenant_id_for_create(context, v)
+
+        with context.session.being(subtransactions=True):
+            pass
+
 
     def create_vip(self, context, vip):
         v = vip['vip']
