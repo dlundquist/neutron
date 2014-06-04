@@ -17,6 +17,7 @@
 
 import sqlalchemy as sa
 from sqlalchemy import orm
+from sqlalchemy.ext import declarative
 from sqlalchemy.orm import exc
 from sqlalchemy.orm import validates
 
@@ -95,6 +96,11 @@ class Vip(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant,
 
 class LoadBalancerListenerAssociation(model_base.BASEV2):
     """Many-to-Many association between LoadBalancer and Listener."""
+
+    @declarative.declared_attr
+    def __tablename__(cls):
+        return 'load_balancer_listener_assocations'
+
     loadbalancer_id = sa.Column(sa.String(36),
                                 sa.ForeignKey("loadbalancers.id"),
                                 primary_key=True)
@@ -125,16 +131,6 @@ class Listener(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
     default_pool = orm.relationship("Pool", backref="listeners")
 
 
-class ListenerPoolAssociation(model_base.BASEV2):
-    """Many-to-Many association between Listener and Pool."""
-    loadbalancer_id = sa.Column(sa.String(36),
-                                sa.ForeignKey("listeners.id"),
-                                primary_key=True)
-    listener_id = sa.Column(sa.String(36),
-                            sa.ForeignKey("pools.id"),
-                            primary_key=True)
-
-
 class Member(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant,
              models_v2.HasStatusDescription):
     """Represents a v2 neutron loadbalancer member."""
@@ -145,6 +141,22 @@ class Member(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant,
     )
     pool_id = sa.Column(sa.String(36), sa.ForeignKey("pools.id"),
                         nullable=False)
+    address = sa.Column(sa.String(64), nullable=False)
+    protocol_port = sa.Column(sa.Integer, nullable=False)
+    weight = sa.Column(sa.Integer, nullable=False)
+    admin_state_up = sa.Column(sa.Boolean(), nullable=False)
+
+
+class Node(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant,
+           models_v2.HasStatusDescription):
+    """Represents a v2 neutron loadbalancer node."""
+    __table_args__ = (
+        sa.schema.UniqueConstraint(
+            'node_pool_id', 'address', 'protocol_port',
+            name='uniq_member0node_pool_id0address0port'),
+    )
+    node_pool_id = sa.Column(sa.String(36), sa.ForeignKey("nodepools.id"),
+                             nullable=False)
     address = sa.Column(sa.String(64), nullable=False)
     protocol_port = sa.Column(sa.Integer, nullable=False)
     weight = sa.Column(sa.Integer, nullable=False)
@@ -186,6 +198,36 @@ class Pool(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant,
     )
 
 
+class NodePool(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant,
+               models_v2.HasStatusDescription):
+    """Represents a v2 neutron loadbalancer nodepool"""
+
+    name = sa.Column(sa.String(255))
+    description = sa.Column(sa.String(255))
+    subnet_id = sa.Column(sa.String(36), nullable=False)
+    protocol = sa.Column(sa.Enum("HTTP", "HTTPS", "TCP", name="lb_protocols"),
+                         nullable=False)
+    lb_method = sa.Column(sa.String(64),
+                          nullable=False)
+    admin_state_up = sa.Column(sa.Boolean(), nullable=False)
+    # stats = orm.relationship(NodePoolStatistics,
+    #                          uselist=False,
+    #                          backref="nodepools",
+    #                          cascade="all, delete-orphan")
+    nodes = orm.relationship(Node, backref="nodepools",
+                             cascade="all, delete-orphan")
+    healthchecks = orm.relationship("HealthCheck", backref="nodepools",
+                                    cascade="all, delete-orphan")
+
+    # provider = orm.relationship(
+    #     st_db.ProviderResourceAssociation,
+    #     uselist=False,
+    #     lazy="joined",
+    #     primaryjoin="Pool.id==ProviderResourceAssociation.resource_id",
+    #     foreign_keys=[st_db.ProviderResourceAssociation.resource_id]
+    # )
+
+
 class HealthMonitor(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
     """Represents a v2 neutron loadbalancer healthmonitor."""
 
@@ -204,6 +246,18 @@ class HealthMonitor(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
         "PoolMonitorAssociation", backref="healthmonitor",
         cascade="all", lazy="joined"
     )
+
+
+class HealthCheck(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
+    """Represents a v2 neutron loadbalancer heatlhcheck."""
+    type = sa.Column(sa.String(32), nullable=False)
+    delay = sa.Column(sa.Integer, nullable=False)
+    timeout = sa.Column(sa.Integer, nullable=False)
+    max_retries = sa.Column(sa.Integer, nullable=False)
+    http_method = sa.Column(sa.String(16))
+    url_path = sa.Column(sa.String(255))
+    expected_codes = sa.Column(sa.String(64))
+    admin_state_up = sa.Column(sa.Boolean(), nullable=False)
 
 
 class PoolMonitorAssociation(model_base.BASEV2,
