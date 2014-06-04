@@ -72,6 +72,7 @@ def upgrade(active_plugins=None, options=None):
         sa.Column(u'name', sa.String(255), nullable=True),
         sa.Column(u'description', sa.String(255), nullable=True),
         sa.Column(u'vip_port_id', sa.String(36), nullable=True),
+        sa.Column(u'vip_subnet_id', sa.String(36), nullable=False),
         sa.Column(u'connection_limit', sa.Integer(11), nullable=True),
         sa.Column(u'status', sa.String(16), nullable=False),
         sa.Column(u'admin_state_up', sa.Boolean(), nullable=False),
@@ -82,12 +83,14 @@ def upgrade(active_plugins=None, options=None):
         u'listeners',
         sa.Column(u'tenant_id', sa.String(255), nullable=True),
         sa.Column(u'id', sa.String(36), nullable=False),
-        sa.Column(u'protocol', sa.String(255), nullable=True),
+        sa.Column(u'protocol', sa.String(36), nullable=True),
         sa.Column(u'protocol_port', sa.Integer(11), nullable=True),
-        sa.Column(u'default_pool_id', sa.String(16), nullable=False),
+        sa.Column(u'default_pool_id', sa.String(36), nullable=False),
         sa.Column(u'admin_state_up', sa.Boolean(), nullable=False),
         sa.ForeignKeyConstraint(['protocol'],
                                 ['loadbalancing_protocols.name']),
+        sa.ForeignKeyConstraint(['default_pool_id'],
+                                ['pools.id']),
         sa.PrimaryKeyConstraint(u'id')
     )
 
@@ -100,21 +103,11 @@ def upgrade(active_plugins=None, options=None):
         sa.PrimaryKeyConstraint(u'loadbalancer_id', u'listener_id')
     )
 
-    op.create_table(
-        u'listenerpoolassociations',
-        sa.Column(u'listener_id', sa.String(255), nullable=False),
-        sa.Column(u'pool_id', sa.String(255), nullable=False),
-        sa.ForeignKeyConstraint(['listener_id'], ['listeners.id']),
-        sa.ForeignKeyConstraint(['pool_id'], ['pools.id']),
-        sa.PrimaryKeyConstraint(u'listener_id', u'pool_id')
-    )
-
 
 def downgrade(active_plugins=None, options=None):
     if not migration.should_run(active_plugins, migration_for_plugins):
         return
 
-    op.drop_table(u'listenerpoolassociations')
     op.drop_table(u'loadbalancerlistenerassociations')
     op.drop_table(u'listeners')
     op.drop_table(u'loadbalancers')

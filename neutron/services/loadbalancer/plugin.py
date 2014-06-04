@@ -105,11 +105,32 @@ class LoadBalancerPlugin(ldb.LoadBalancerPluginDb,
     def get_plugin_description(self):
         return "Neutron LoadBalancer Service Plugin"
 
+    def create_load_balancer_and_listener_from_vip(self, context, vip):
+        vip = vip.get('vip')
+        to_lb = {'name': vip.get('name'),
+                 'description': vip.get('description'),
+                 'vip_subnet_id': vip.get('subnet_id'),
+                 'connection_limit': vip.get('connection_limit'),
+                 'admin_state_up': vip.get('admin_state_up')}
+        to_lb = {'load_balancer': to_lb}
+
+        to_listener = {'protocol': vip.get('protocol'),
+                       'protocol_port': vip.get('protocol_port'),
+                       'default_pool_id': vip.get('pool_id'),
+                       'admin_state_up': vip.get('admin_state_up')}
+        to_listener = {'listener': to_listener}
+        lb_db = super(LoadBalancerPlugin,
+                      self).create_load_balancer_and_listener(context,
+                                                              to_lb,
+                                                              to_listener)
+        return lb_db
+
     def create_vip(self, context, vip):
-        v = super(LoadBalancerPlugin, self).create_vip(context, vip)
-        driver = self._get_driver_for_pool(context, v['pool_id'])
-        driver.create_vip(context, v)
-        return v
+        lb_db = self.create_load_balancer_and_listener_from_vip(context,
+                                                                vip)
+        # driver = self._get_driver_for_pool(context, v['pool_id'])
+        # driver.create_vip(context, v)
+        return lb_db.to_dict()
 
     def update_vip(self, context, id, vip):
         if 'status' not in vip['vip']:

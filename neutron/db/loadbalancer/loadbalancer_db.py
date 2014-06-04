@@ -97,41 +97,56 @@ class LoadBalancer(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
     """Represents a v2 neutron loadbalancer."""
     name = sa.Column(sa.String(255))
     description = sa.Column(sa.String(255))
-    vip_port_id = sa.Column(sa.String(255))
+    vip_subnet_id = sa.Column(sa.String(36))
+    vip_port_id = sa.Column(sa.String(36))
     connection_limit = sa.Column(sa.Integer)
-    status = sa.Column(sa.String(255))
+    status = sa.Column(sa.String(16))
     admin_state_up = sa.Column(sa.Boolean(), nullable=False)
-    loadbalancers = orm.relationship('loadbalancerlistenerassociations',
-                                     backref="loadbalancers")
+    listeners = orm.relationship("Listener",
+                                 secondary="loadbalancerlistenerassociations",
+                                 backref="loadbalancers")
+
+    def to_dict(self):
+
+        res = {'id': self.id,
+               'tenant_id': self.tenant_id,
+               'name': self.name,
+               'description': self.description,
+               'subnet_id': self.vip_subnet_id,
+               'vip_port_id': self.vip_port_id,
+               'connection_limit': self.connection_limit,
+               'admin_state_up': self.admin_state_up,
+               'status': self.status}
+
+        return res
 
 
 class Listener(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
     """Represents a v2 neutron listener."""
-    default_pool_id = sa.Column(sa.String(255))
-    protocol = sa.Column(sa.String(255))
+    default_pool_id = sa.Column(sa.String(36))
+    protocol = sa.Column(sa.String(36))
     protocol_port = sa.Column(sa.Integer)
     admin_state_up = sa.Column(sa.Boolean(), nullable=False)
-    loadbalancers = orm.relationship('LoadBalancerListenerAssociations',
-                                     backref="loadbalancers")
+
+    def to_dict(self):
+
+        res = {'id': self.id,
+               'tenant_id': self.tenant_id,
+               'protocol': self.protocol,
+               'protocol_port': self.protocol_port,
+               'default_pool_id': self.default_pool_id,
+               'admin_state_up': self.admin_state_up}
+
+        return res
 
 
-class LoadBalancerListenerAssociations(model_base.BASEV2):
+class LoadBalancerListenerAssociation(model_base.BASEV2):
     """Many-to-Many association between LoadBalancer and Listener."""
     loadbalancer_id = sa.Column(sa.String(36),
                                 sa.ForeignKey("loadbalancers.id"),
                                 primary_key=True)
     listener_id = sa.Column(sa.String(36),
                             sa.ForeignKey("listeners.id"),
-                            primary_key=True)
-
-
-class ListenerPoolAssociations(model_base.BASEV2):
-    """Many-to-Many association between Listener and Pool."""
-    loadbalancer_id = sa.Column(sa.String(36),
-                                sa.ForeignKey("listeners.id"),
-                                primary_key=True)
-    listener_id = sa.Column(sa.String(36),
-                            sa.ForeignKey("pools.id"),
                             primary_key=True)
 
 
@@ -183,9 +198,6 @@ class Pool(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant,
         primaryjoin="Pool.id==ProviderResourceAssociation.resource_id",
         foreign_keys=[st_db.ProviderResourceAssociation.resource_id]
     )
-
-    listeners = orm.relationship("ListenerPoolAssociation",
-                                 backref="listeners")
 
 
 class HealthMonitor(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
@@ -383,6 +395,76 @@ class LoadBalancerPluginDb(loadbalancer.LoadBalancerPluginBase,
 
             port = self._core_plugin.create_port(context, {'port': port_data})
             vip_db.port_id = port['id']
+
+    def create_load_balancer(self, context, load_balancer):
+        lb = load_balancer.get('load_balancer')
+        tenant_id = self._get_tenant_id_for_create(context, lb)
+
+        with context.session.begin(subtransactions=True):
+
+            lb_db = LoadBalancer(id=uuidutils.generate_uuid(),
+                                 tenant_id=tenant_id,
+                                 name=lb['name'],
+                                 description=lb['description'],
+                                 vip_subnet_id=lb['vip_subnet_id'],
+                                 connection_limit=lb['connection_limit'],
+                                 admin_state_up=lb['admin_state_up'],
+                                 status=constants.PENDING_CREATE)
+
+            context.session.add(lb_db)
+            context.session.flush()
+
+        return lb_db
+
+    def create_listener(self, context, listener):
+        listener = listener.get('listener')
+        tenant_id = self._get_tenant_id_for_create(context, listener)
+
+        with context.session.begin(subtransactions=True):
+
+            listener_db = Listener(id=uuidutils.generate_uuid(),
+                                   tenant_id=tenant_id,
+                                   protocol=listener['protocol'],
+                                   protocol_port=listener['protocol_port'],
+                                   default_pool_id=listener['default_pool_id'],
+                                   admin_state_up=listener['admin_state_up'])
+
+            context.session.add(listener_db)
+            context.session.flush()
+
+        return listener_db
+
+    #This is only being created for backwards compatibility with the old API.
+    #When a VIP is created it will create both a load balancer and listener
+    def create_load_balancer_and_listener(self, context, load_balancer,
+                                          listener):
+        lb = load_balancer.get('load_balancer')
+        listener = listener.get('listener')
+        tenant_id = self._get_tenant_id_for_create(context, lb)
+
+        with context.session.begin(subtransactions=True):
+
+            lb_db = LoadBalancer(id=uuidutils.generate_uuid(),
+                                 tenant_id=tenant_id,
+                                 name=lb['name'],
+                                 description=lb['description'],
+                                 vip_subnet_id=lb['vip_subnet_id'],
+                                 connection_limit=lb['connection_limit'],
+                                 admin_state_up=lb['admin_state_up'],
+                                 status=constants.PENDING_CREATE)
+
+            listener_db = Listener(id=uuidutils.generate_uuid(),
+                                   tenant_id=tenant_id,
+                                   protocol=listener['protocol'],
+                                   protocol_port=listener['protocol_port'],
+                                   default_pool_id=listener['default_pool_id'],
+                                   admin_state_up=listener['admin_state_up'])
+
+            lb_db.listeners.append(listener_db)
+            context.session.add(lb_db)
+            context.session.add(listener_db)
+            context.session.flush()
+        return lb_db
 
     def create_vip(self, context, vip):
         v = vip['vip']
