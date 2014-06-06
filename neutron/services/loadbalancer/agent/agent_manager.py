@@ -167,40 +167,41 @@ class LbaasAgentManager(periodic_task.PeriodicTasks):
         driver_name = self.instance_mapping[pool_id]
         return self.device_drivers[driver_name]
 
-    def _reload_pool(self, pool_id):
+    def _reload_load_balancer(self, lb_id):
         try:
-            logical_config = self.plugin_rpc.get_logical_device(pool_id)
+            logical_config = self.plugin_rpc.get_logical_device(lb_id)
             driver_name = logical_config['driver']
             if driver_name not in self.device_drivers:
                 LOG.error(_('No device driver '
                             'on agent: %s.'), driver_name)
                 self.plugin_rpc.update_status(
-                    'pool', pool_id, constants.ERROR)
+                    'load_balancer', lb_id, constants.ERROR)
                 return
 
             self.device_drivers[driver_name].deploy_instance(logical_config)
-            self.instance_mapping[pool_id] = driver_name
-            self.plugin_rpc.pool_deployed(pool_id)
+            self.instance_mapping[lb_id] = driver_name
+            self.plugin_rpc.load_balancer_deployed(lb_id)
         except Exception:
             LOG.exception(_('Unable to deploy instance for pool: %s'), pool_id)
             self.needs_resync = True
 
-    def _destroy_pool(self, pool_id):
-        driver = self._get_driver(pool_id)
+    def _destroy_load_balancer(self, lb_id):
+        driver = self._get_driver(lb_id)
         try:
-            driver.undeploy_instance(pool_id)
-            del self.instance_mapping[pool_id]
-            self.plugin_rpc.pool_destroyed(pool_id)
+            driver.undeploy_instance(lb_id)
+            del self.instance_mapping[lb_id]
+            self.plugin_rpc.pool_destroyed(lb_id)
         except Exception:
-            LOG.exception(_('Unable to destroy device for pool: %s'), pool_id)
+            LOG.exception(_('Unable to destroy device for load balancer: %s'),
+                          lb_id)
             self.needs_resync = True
 
     def remove_orphans(self):
         for driver_name in self.device_drivers:
-            pool_ids = [pool_id for pool_id in self.instance_mapping
-                        if self.instance_mapping[pool_id] == driver_name]
+            lb_ids = [lb_id for lb_id in self.instance_mapping
+                        if self.instance_mapping[lb_id] == driver_name]
             try:
-                self.device_drivers[driver_name].remove_orphans(pool_ids)
+                self.device_drivers[driver_name].remove_orphans(lb_ids)
             except NotImplementedError:
                 pass  # Not all drivers will support this
 
@@ -248,7 +249,7 @@ class LbaasAgentManager(periodic_task.PeriodicTasks):
             self._handle_failed_driver_call('create', 'pool', pool['id'],
                                             driver.get_name())
         else:
-            self.instance_mapping[pool['id']] = driver_name
+            # self.instance_mapping[pool['id']] = driver_name
             self.plugin_rpc.update_status('pool', pool['id'], constants.ACTIVE)
 
     def update_pool(self, context, old_pool, pool):
@@ -264,7 +265,7 @@ class LbaasAgentManager(periodic_task.PeriodicTasks):
     def delete_pool(self, context, pool):
         driver = self._get_driver(pool['id'])
         driver.delete_pool(pool)
-        del self.instance_mapping[pool['id']]
+        # del self.instance_mapping[pool['id']]
 
     def create_member(self, context, member):
         driver = self._get_driver(member['pool_id'])
@@ -330,8 +331,10 @@ class LbaasAgentManager(periodic_task.PeriodicTasks):
             if self.admin_state_up:
                 self.needs_resync = True
             else:
-                for pool_id in self.instance_mapping.keys():
-                    LOG.info(_("Destroying pool %s due to agent disabling"),
-                             pool_id)
-                    self._destroy_pool(pool_id)
+                for lb_id in self.instance_mapping.keys():
+                    LOG.info(_("Destroying load balancer %s due to agent"
+                               "disabling"),
+                             lb_id)
+                    # self._destroy_pool(pool_id)
+                    self._destroy_load_balancer(lb_id)
             LOG.info(_("Agent_updated by server side %s!"), payload)

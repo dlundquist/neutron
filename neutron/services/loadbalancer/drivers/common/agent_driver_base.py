@@ -126,6 +126,12 @@ class LoadBalancerCallbacks(object):
 
             return retval
 
+    def load_balancer_deployed(self, context, lb_id):
+        with context.session.begin(subtransactions=True):
+            qry = context.session.query(loadbalancer_db.LoadBalancer)
+            qry = qry.filter_by(id=lb_id)
+            lb = qry.one()
+
     def pool_deployed(self, context, pool_id):
         with context.session.begin(subtransactions=True):
             qry = context.session.query(loadbalancer_db.Pool)

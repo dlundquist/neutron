@@ -30,6 +30,7 @@ from neutron.openstack.common import log as logging
 
 LOG = logging.getLogger(__name__)
 
+
 #TODO: (brandon-logan) Remove this class when old API is removed
 class PoolLoadbalancerAgentBinding(model_base.BASEV2):
     """Represents binding between neutron loadbalancer pools and agents."""

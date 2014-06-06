@@ -105,6 +105,13 @@ class LoadBalancer(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
     listeners = orm.relationship("Listener",
                                  secondary="loadbalancerlistenerassociations",
                                  backref="loadbalancers")
+    provider = orm.relationship(
+        st_db.ProviderResourceAssociation,
+        uselist=False,
+        lazy="joined",
+        primaryjoin="LoadBalancer.id==ProviderResourceAssociation.resource_id",
+        foreign_keys=[st_db.ProviderResourceAssociation.resource_id]
+    )
 
 
 class Listener(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
@@ -113,17 +120,7 @@ class Listener(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
     protocol = sa.Column(sa.String(36))
     protocol_port = sa.Column(sa.Integer)
     admin_state_up = sa.Column(sa.Boolean(), nullable=False)
-
-    def to_dict(self):
-
-        res = {'id': self.id,
-               'tenant_id': self.tenant_id,
-               'protocol': self.protocol,
-               'protocol_port': self.protocol_port,
-               'default_pool_id': self.default_pool_id,
-               'admin_state_up': self.admin_state_up}
-
-        return res
+    default_pool = orm.relationship("Pool", backref="listener")
 
 
 class LoadBalancerListenerAssociation(model_base.BASEV2):
@@ -334,6 +331,9 @@ class LoadBalancerPluginDb(loadbalancer.LoadBalancerPluginBase,
                'protocol_port': listener.protocol_port,
                'default_pool_id': listener.default_pool_id,
                'admin_state_up': listener.admin_state_up}
+        if hasattr(listener, 'default_pool'):
+            res['default_pool'] = self._make_pool_dict(listener.default_pool,
+                                                       fields=fields)
 
         return self._fields(res, fields=fields)
 

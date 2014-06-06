@@ -145,8 +145,13 @@ class LoadBalancerPlugin(ldb.LoadBalancerPluginDb,
         return vip
 
     def create_vip(self, context, vip):
-        lb_db = self.create_load_balancer_and_listener_from_vip(context,
-                                                                vip)
+        lb = self.create_load_balancer_and_listener_from_vip(context, vip)
+        pool = lb.listeners[0].default_pool
+
+        self.service_type_manager.add_resource_association(
+            context,
+            constants.LOADBALANCER,
+            provider_name, p['id'])
         # driver = self._get_driver_for_pool(context, v['pool_id'])
         # driver.create_vip(context, v)
         return self._load_balancer_to_vip(lb_db)
@@ -182,10 +187,10 @@ class LoadBalancerPlugin(ldb.LoadBalancerPluginDb,
         driver = self._get_driver_for_pool(context, v['pool_id'])
         driver.delete_vip(context, v)
 
-    def _get_provider_name(self, context, pool):
-        if ('provider' in pool and
-            pool['provider'] != attrs.ATTR_NOT_SPECIFIED):
-            provider_name = pconf.normalize_provider_name(pool['provider'])
+    def _get_provider_name(self, context, entity):
+        if ('provider' in entity and
+            entity['provider'] != attrs.ATTR_NOT_SPECIFIED):
+            provider_name = pconf.normalize_provider_name(entity['provider'])
             self.validate_provider(provider_name)
             return provider_name
         else:

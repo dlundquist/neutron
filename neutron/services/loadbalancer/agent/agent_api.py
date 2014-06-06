@@ -55,6 +55,13 @@ class LbaasAgentApi(rpc_compat.RpcProxy):
             topic=self.topic
         )
 
+    def load_balancer_deployed(self, lb_id):
+        return self.call(
+            self.context,
+            self.make_msg('load_balancer_deployed', lb_id=lb_id),
+            topic=self.topic
+        )
+
     def get_logical_device(self, pool_id):
         return self.call(
             self.context,
