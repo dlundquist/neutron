@@ -30,7 +30,7 @@ from neutron.openstack.common import log as logging
 
 LOG = logging.getLogger(__name__)
 
-
+#TODO: (brandon-logan) Remove this class when old API is removed
 class PoolLoadbalancerAgentBinding(model_base.BASEV2):
     """Represents binding between neutron loadbalancer pools and agents."""
 
@@ -43,14 +43,40 @@ class PoolLoadbalancerAgentBinding(model_base.BASEV2):
                          nullable=False)
 
 
+class LoadbalancerAgentBinding(model_base.BASEV2):
+    """Represents binding between neutron loadbalancers and agents."""
+
+    load_balancer_id = sa.Column(sa.String(36),
+                                sa.ForeignKey("loadbalancers.id",
+                                              ondelete="CASCADE"),
+                                primary_key=True)
+    agent = orm.relation(agents_db.Agent)
+    agent_id = sa.Column(sa.String(36),
+                         sa.ForeignKey("agents.id", ondelete="CASCADE"),
+                         nullable=False)
+
+
 class LbaasAgentSchedulerDbMixin(agentschedulers_db.AgentSchedulerDbMixin,
                                  lbaas_agentscheduler
                                  .LbaasAgentSchedulerPluginBase):
 
+    #TODO: (brandon-logan) Remove this method when old API is removed
     def get_lbaas_agent_hosting_pool(self, context, pool_id, active=None):
         query = context.session.query(PoolLoadbalancerAgentBinding)
         query = query.options(joinedload('agent'))
         binding = query.get(pool_id)
+
+        if (binding and self.is_eligible_agent(
+                active, binding.agent)):
+            return {'agent': self._make_agent_dict(binding.agent)}
+
+    def get_lbaas_agent_hosting_load_balancer(self,
+                                              context,
+                                              load_balancer_id,
+                                              active=None):
+        query = context.session.query(LoadbalancerAgentBinding)
+        query = query.options(joinedload('agent'))
+        binding = query.get(load_balancer_id)
 
         if (binding and self.is_eligible_agent(
                 active, binding.agent)):
@@ -71,12 +97,24 @@ class LbaasAgentSchedulerDbMixin(agentschedulers_db.AgentSchedulerDbMixin,
                 for agent in query
                 if self.is_eligible_agent(active, agent)]
 
+    #TODO: (brandon-logan) Remove this method when old API is removed
     def list_pools_on_lbaas_agent(self, context, id):
         query = context.session.query(PoolLoadbalancerAgentBinding.pool_id)
         query = query.filter_by(agent_id=id)
         pool_ids = [item[0] for item in query]
         if pool_ids:
             return {'pools': self.get_pools(context, filters={'id': pool_ids})}
+        else:
+            return {'pools': []}
+
+    def list_load_balancers_on_lbaas_agent(self, context, id):
+        query = context.session.query(
+            LoadbalancerAgentBinding.load_balancer_id)
+        query = query.filter_by(agent_id=id)
+        lb_ids = [item[0] for item in query]
+        if lb_ids:
+            return {'pools': self.get_load_balancers(context,
+                                                     filters={'id': lb_ids})}
         else:
             return {'pools': []}
 
@@ -126,5 +164,44 @@ class ChanceScheduler(object):
             LOG.debug(_('Pool %(pool_id)s is scheduled to '
                         'lbaas agent %(agent_id)s'),
                       {'pool_id': pool['id'],
+                       'agent_id': chosen_agent['id']})
+            return chosen_agent
+
+    def schedule_load_balancer(self, plugin, context, load_balancer,
+                               device_driver):
+        """Schedule the load balancer to an active loadbalancer agent if there
+        is no enabled agent hosting it.
+        """
+        with context.session.begin(subtransactions=True):
+            lbaas_agent = plugin.get_lbaas_agent_hosting_load_balancer(
+                context, load_balancer['id'])
+            if lbaas_agent:
+                LOG.debug(_('Load Balancer %(load_balancer_id)s has already '
+                            'been hosted by lbaas agent %(agent_id)s'),
+                          {'load_balancer_id': load_balancer['id'],
+                           'agent_id': lbaas_agent['id']})
+                return
+
+            active_agents = plugin.get_lbaas_agents(context, active=True)
+            if not active_agents:
+                LOG.warn(_('No active lbaas agents for load balancer %s'),
+                         load_balancer['id'])
+                return
+
+            candidates = plugin.get_lbaas_agent_candidates(device_driver,
+                                                           active_agents)
+            if not candidates:
+                LOG.warn(_('No lbaas agent supporting device driver %s'),
+                         device_driver)
+                return
+
+            chosen_agent = random.choice(candidates)
+            binding = LoadbalancerAgentBinding()
+            binding.agent = chosen_agent
+            binding.load_balancer_id = load_balancer['id']
+            context.session.add(binding)
+            LOG.debug(_('Load Balancer %(load_balancer_id)s is scheduled to '
+                        'lbaas agent %(agent_id)s'),
+                      {'load_balancer_id': load_balancer['id'],
                        'agent_id': chosen_agent['id']})
             return chosen_agent

@@ -29,8 +29,12 @@ from neutron import wsgi
 LOADBALANCER_POOL = 'loadbalancer-pool'
 LOADBALANCER_POOLS = LOADBALANCER_POOL + 's'
 LOADBALANCER_AGENT = 'loadbalancer-agent'
+LOADBALANCER = 'loadbalancer'
+LOADBALANCERS = LOADBALANCER + 's'
+LOADBALANCER_LB_AGENT = 'loadbalancer-lb-agent'
 
 
+#TODO: (brandon-logan) remove this class when old API is removed
 class PoolSchedulerController(wsgi.Controller):
     def index(self, request, **kwargs):
         lbaas_plugin = manager.NeutronManager.get_service_plugins().get(
@@ -46,6 +50,22 @@ class PoolSchedulerController(wsgi.Controller):
             request.context, kwargs['agent_id'])
 
 
+class LoadBalancerSchedulerController(wsgi.Controller):
+    def index(self, request, **kwargs):
+        lbaas_plugin = manager.NeutronManager.get_service_plugins().get(
+            plugin_const.LOADBALANCER)
+        if not lbaas_plugin:
+            return {'load_balancers': []}
+
+        policy.enforce(request.context,
+                       "get_%s" % LOADBALANCER_POOLS,
+                       {},
+                       plugin=lbaas_plugin)
+        return lbaas_plugin.list_load_balancers_on_lbaas_agent(
+            request.context, kwargs['agent_id'])
+
+
+#TODO: (brandon-logan) remove this class when old API is removed
 class LbaasAgentHostingPoolController(wsgi.Controller):
     def index(self, request, **kwargs):
         lbaas_plugin = manager.NeutronManager.get_service_plugins().get(
@@ -58,7 +78,22 @@ class LbaasAgentHostingPoolController(wsgi.Controller):
                        {},
                        plugin=lbaas_plugin)
         return lbaas_plugin.get_lbaas_agent_hosting_pool(
-            request.context, kwargs['pool_id'])
+            request.context, kwargs['pool'])
+
+
+class LbaasAgentHostingLoadBalancerController(wsgi.Controller):
+    def index(self, request, **kwargs):
+        lbaas_plugin = manager.NeutronManager.get_service_plugins().get(
+            plugin_const.LOADBALANCER)
+        if not lbaas_plugin:
+            return
+
+        policy.enforce(request.context,
+                       "get_%s" % LOADBALANCER_LB_AGENT,
+                       {},
+                       plugin=lbaas_plugin)
+        return lbaas_plugin.get_lbaas_agent_hosting_load_balancer(
+            request.context, kwargs['lb_id'])
 
 
 class Lbaas_agentscheduler(extensions.ExtensionDescriptor):
@@ -117,9 +152,19 @@ class NoEligibleLbaasAgent(loadbalancer.NoEligibleBackend):
                 "for pool %(pool_id)s.")
 
 
+class NoEligibleLbaasLoadBalancerAgent(loadbalancer.NoEligibleBackend):
+    message = _("No elgible load balancer agent found "
+                "for load balancer %(lb_id)s.")
+
+
 class NoActiveLbaasAgent(agent.AgentNotFound):
     message = _("No active loadbalancer agent found "
                 "for pool %(pool_id)s.")
+
+
+class NoActiveLbaasLoadBalancerAgent(agent.AgentNotFound):
+    message = _("No active loadbalancer agent found "
+                "for load balancer %(lb_id)s.")
 
 
 class LbaasAgentSchedulerPluginBase(object):
@@ -128,10 +173,20 @@ class LbaasAgentSchedulerPluginBase(object):
     All of method must be in an admin context.
     """
 
+    #TODO: (brandon-logan) Remove this method when old API is removed
     @abc.abstractmethod
     def list_pools_on_lbaas_agent(self, context, id):
         pass
 
+    #TODO: (brandon-logan) Remove this method when old API is removed
     @abc.abstractmethod
     def get_lbaas_agent_hosting_pool(self, context, pool_id):
+        pass
+
+    @abc.abstractmethod
+    def list_load_balancers_on_lbaas_agent(self, context, id):
+        pass
+
+    @abc.abstractmethod
+    def get_lbaas_agent_hosting_load_balancer(self, context, load_balancer_id):
         pass

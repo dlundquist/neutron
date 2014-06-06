@@ -336,8 +336,15 @@ class AgentDriverBase(abstract_driver.LoadBalancerAbstractDriver):
         self.plugin.agent_notifiers.update(
             {q_const.AGENT_TYPE_LOADBALANCER: self.agent_rpc})
 
-        self.pool_scheduler = importutils.import_object(
-            cfg.CONF.loadbalancer_pool_scheduler_driver)
+        if hasattr(cfg.CONF, 'loadbalancer_scheduler_driver'):
+            self.load_balancer_scheduler = importutils.import_object(
+                cfg.CONF.loadbalancer_scheduler_driver)
+
+        #TODO (brandon-logan): remove self.pool_scheduler and config option
+        #once old API has been removed
+        if hasattr(cfg.CONF, 'loadbalancer_pool_scheduler_driver'):
+            self.pool_scheduler = importutils.import_object(
+                cfg.CONF.loadbalancer_pool_scheduler_driver)
 
     def _set_callbacks_on_plugin(self):
         # other agent based plugin driver might already set callbacks on plugin
@@ -358,6 +365,38 @@ class AgentDriverBase(abstract_driver.LoadBalancerAbstractDriver):
             raise lbaas_agentscheduler.NoActiveLbaasAgent(pool_id=pool_id)
         return agent['agent']
 
+    def get_load_balancer_agent(self, context, lb_id):
+        agent = self.plugin.get_lbaas_agent_hosting_load_balancer(context,
+                                                                  lb_id)
+        if not agent:
+            raise lbaas_agentscheduler.NoActiveLbaasLoadBalancerAgent(
+                lb_id=lb_id)
+        return agent['agent']
+
+    def create_load_balancer(self, context, lb):
+        agent = self.load_balancer_scheduler.schedule(self.plugin,
+                                                      context, lb,
+                                                      self.device_driver)
+        if not agent:
+            raise lbaas_agentscheduler.NoEligibleLbaasAgent(lb_id=lb['id'])
+        self.agent_rpc.create_load_balancer(context, lb, agent['host'],
+                                            self.device_driver)
+
+    def update_load_balancer(self, context, old_lb, lb):
+        agent = self.get_load_balancer_agent(context, lb['id'])
+
+    def delete_load_balancer(self, context, lb):
+        agent = self.get_load_balancer_agent(context, lb['id'])
+
+    def create_listener(self, context, lb):
+        agent = self.get_load_balancer_agent(context, lb['id'])
+
+    def delete_listener(self, context, lb):
+        agent = self.get_load_balancer_agent(context, lb['id'])
+
+    def update_listener(self, context, lb):
+        agent = self.get_load_balancer_agent(context, lb['id'])
+
     def create_vip(self, context, vip):
         agent = self.get_pool_agent(context, vip['pool_id'])
         self.agent_rpc.create_vip(context, vip, agent['host'])
@@ -375,12 +414,23 @@ class AgentDriverBase(abstract_driver.LoadBalancerAbstractDriver):
         self.agent_rpc.delete_vip(context, vip, agent['host'])
 
     def create_pool(self, context, pool):
-        agent = self.pool_scheduler.schedule(self.plugin, context, pool,
-                                             self.device_driver)
-        if not agent:
-            raise lbaas_agentscheduler.NoEligibleLbaasAgent(pool_id=pool['id'])
-        self.agent_rpc.create_pool(context, pool, agent['host'],
-                                   self.device_driver)
+        if 'loadbalancer_ids' in pool and len(pool['loadbalancer_ids']) > 0:
+            for lb_id in pool['loadbalancer_ids']:
+                agent = self.get_load_balancer_agent(context, lb_id)
+                if not agent:
+                    raise lbaas_agentscheduler.\
+                        NoEligibleLbaasLoadBalancerAgent(lb_id=lb_id)
+                self.agent_rpc.create_pool(context, pool, agent['host'],
+                                           self.device_driver)
+        #TODO: remove entire else block when old API is removed
+        else:
+            agent = self.pool_scheduler.schedule(self.plugin, context, pool,
+                                                 self.device_driver)
+            if not agent:
+                raise lbaas_agentscheduler.NoEligibleLbaasAgent(
+                    pool_id=pool['id'])
+            self.agent_rpc.create_pool(context, pool, agent['host'],
+                                       self.device_driver)
 
     def update_pool(self, context, old_pool, pool):
         agent = self.get_pool_agent(context, pool['id'])

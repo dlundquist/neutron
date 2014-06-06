@@ -103,11 +103,25 @@ def upgrade(active_plugins=None, options=None):
         sa.PrimaryKeyConstraint(u'loadbalancer_id', u'listener_id')
     )
 
+    op.create_table(
+        u'loadbalanceragentbindings',
+        sa.Column('loadbalancer_id', sa.String(36), nullable=False),
+        sa.Column('agent_id', sa.String(36), nullable=False),
+        sa.ForeignKeyConstraint(['agent_id'],
+                                ['agents.id'],
+                                ondelete='CASCADE'),
+        sa.ForeignKeyConstraint(['loadbalancer_id'],
+                                ['loadbalancers.id'],
+                                ondelete='CASCADE'),
+        sa.PrimaryKeyConstraint('loadbalancer_id')
+    )
+
 
 def downgrade(active_plugins=None, options=None):
     if not migration.should_run(active_plugins, migration_for_plugins):
         return
 
+    op.drop_table(u'loadbalanceragentbindings')
     op.drop_table(u'loadbalancerlistenerassociations')
     op.drop_table(u'listeners')
     op.drop_table(u'loadbalancers')

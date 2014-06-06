@@ -58,6 +58,32 @@ class LoadBalancerAbstractDriver(object):
         pass
 
     @abc.abstractmethod
+    def create_load_balancer(self, context, lb):
+        """A real driver would invoke a call to his backend and create a load
+        balancer using a VIP created on the vip_subnet_id"""
+        pass
+
+    @abc.abstractmethod
+    def update_load_balancer(self, context, old_lb, lb):
+        pass
+
+    @abc.abstractmethod
+    def delete_load_balancer(self, context, lb):
+        pass
+
+    @abc.abstractmethod
+    def create_listener(self, context, lb):
+        pass
+
+    @abc.abstractmethod
+    def update_listener(self, context, lb):
+        pass
+
+    @abc.abstractmethod
+    def delete_listener(self, context, lb):
+        pass
+
+    @abc.abstractmethod
     def create_pool(self, context, pool):
         """Driver may call the code below in order to update the status.
         self.plugin.update_status(context, Pool, pool["id"],

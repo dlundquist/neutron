@@ -119,18 +119,48 @@ class LoadBalancerPlugin(ldb.LoadBalancerPluginDb,
                        'default_pool_id': vip.get('pool_id'),
                        'admin_state_up': vip.get('admin_state_up')}
         to_listener = {'listener': to_listener}
-        lb_db = super(LoadBalancerPlugin,
-                      self).create_load_balancer_and_listener(context,
-                                                              to_lb,
-                                                              to_listener)
-        return lb_db
+        lb_dict = super(LoadBalancerPlugin,
+                        self).create_load_balancer_and_listener(context,
+                                                                to_lb,
+                                                                to_listener)
+        return lb_dict
+
+    def _load_balancer_to_vip(self, lb):
+        vip = {'tenant_id': lb.get('tenant_id'),
+               'id': lb.get('id'),
+               'name': lb.get('name'),
+               'description': lb.get('description'),
+               'port_id': lb.get('vip_port_id'),
+               'status': lb.get('status'),
+               'admin_state_up': lb.get('admin_state_up'),
+               'connection_limit': lb.get('connection_limit'),
+               'status_description': ''}
+        if lb.get('listeners') and len(lb['listeners']) > 0:
+            listener = lb['listeners'][0]
+            vip['protocol_port'] = listener.get('protocol_port')
+            vip['protocol'] = listener.get('protocol')
+            vip['pool_id'] = listener.get('default_pool_id')
+            vip['admin_state_up'] = (lb.get('admin_state_up') and
+                                     listener.get('admin_state_up'))
+        return vip
 
     def create_vip(self, context, vip):
         lb_db = self.create_load_balancer_and_listener_from_vip(context,
                                                                 vip)
         # driver = self._get_driver_for_pool(context, v['pool_id'])
         # driver.create_vip(context, v)
-        return lb_db.to_dict()
+        return self._load_balancer_to_vip(lb_db)
+
+    def get_vip(self, context, id_, fields=None):
+        lb_dict = super(LoadBalancerPlugin, self).get_load_balancer(
+            context, id_, fields=None)
+        return self._load_balancer_to_vip(lb_dict)
+
+    def get_vips(self, context, filters=None, fields=None):
+        lb_list = super(LoadBalancerPlugin, self).get_load_balancers(
+            context, filters=filters, fields=fields)
+        ret = [self._load_balancer_to_vip(lb) for lb in lb_list]
+        return ret
 
     def update_vip(self, context, id, vip):
         if 'status' not in vip['vip']:
@@ -168,6 +198,8 @@ class LoadBalancerPlugin(ldb.LoadBalancerPluginDb,
         provider_name = self._get_provider_name(context, pool['pool'])
         p = super(LoadBalancerPlugin, self).create_pool(context, pool)
 
+        #TODO: remove once old API has been removed, provider will be
+        #associated with load balancer in new API
         self.service_type_manager.add_resource_association(
             context,
             constants.LOADBALANCER,
@@ -179,8 +211,8 @@ class LoadBalancerPlugin(ldb.LoadBalancerPluginDb,
         try:
             driver.create_pool(context, p)
         except loadbalancer.NoEligibleBackend:
-            # that should catch cases when backend of any kind
-            # is not available (agent, appliance, etc)
+        #     that should catch cases when backend of any kind
+        #     is not available (agent, appliance, etc)
             self.update_status(context, ldb.Pool,
                                p['id'], constants.ERROR,
                                "No eligible backend")
