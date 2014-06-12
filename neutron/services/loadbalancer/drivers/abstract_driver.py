@@ -32,67 +32,42 @@ class LoadBalancerAbstractDriver(object):
     """
 
     @abc.abstractmethod
-    def create_vip(self, context, vip):
+    def create_load_balancer(self, context, load_balancer):
         """A real driver would invoke a call to his backend
-        and set the Vip status to ACTIVE/ERROR according
+        and set the Load Balancer status to ACTIVE/ERROR according
         to the backend call result
-        self.plugin.update_status(context, Vip, vip["id"],
+        self.plugin.update_status(context, LoadBalancer, load_balancer["id"],
                                   constants.ACTIVE)
         """
         pass
 
     @abc.abstractmethod
-    def update_vip(self, context, old_vip, vip):
+    def update_load_balancer(self, context, old_load_balancer, load_balancer):
         """Driver may call the code below in order to update the status.
-        self.plugin.update_status(context, Vip, id, constants.ACTIVE)
+        self.plugin.update_status(context, LoadBalancer, id, constants.ACTIVE)
         """
         pass
 
     @abc.abstractmethod
-    def delete_vip(self, context, vip):
+    def delete_load_balancer(self, context, load_balancer):
         """A real driver would invoke a call to his backend
-        and try to delete the Vip.
+        and try to delete the Load Balancer.
         if the deletion was successful, delete the record from the database.
         if the deletion has failed, set the Vip status to ERROR.
         """
         pass
 
     @abc.abstractmethod
-    def create_load_balancer(self, context, lb):
-        """A real driver would invoke a call to his backend and create a load
-        balancer using a VIP created on the vip_subnet_id"""
+    def update_listener(self, context, load_balancer_id, old_listener,
+                        listener):
         pass
 
     @abc.abstractmethod
-    def update_load_balancer(self, context, old_lb, lb):
+    def delete_listener(self, context, load_balancer_id, listener):
         pass
 
     @abc.abstractmethod
-    def delete_load_balancer(self, context, lb):
-        pass
-
-    @abc.abstractmethod
-    def create_listener(self, context, lb):
-        pass
-
-    @abc.abstractmethod
-    def update_listener(self, context, lb):
-        pass
-
-    @abc.abstractmethod
-    def delete_listener(self, context, lb):
-        pass
-
-    @abc.abstractmethod
-    def create_pool(self, context, pool):
-        """Driver may call the code below in order to update the status.
-        self.plugin.update_status(context, Pool, pool["id"],
-                                  constants.ACTIVE)
-        """
-        pass
-
-    @abc.abstractmethod
-    def update_pool(self, context, old_pool, pool):
+    def update_pool(self, context, load_balancer_id, old_pool, pool):
         """Driver may call the code below in order to update the status.
         self.plugin.update_status(context,
                                   Pool,
@@ -101,7 +76,7 @@ class LoadBalancerAbstractDriver(object):
         pass
 
     @abc.abstractmethod
-    def delete_pool(self, context, pool):
+    def delete_pool(self, context, load_balancer_id, pool):
         """Driver can call the code below in order to delete the pool.
         self.plugin._delete_db_pool(context, pool["id"])
         or set the status to ERROR if deletion failed
@@ -109,11 +84,11 @@ class LoadBalancerAbstractDriver(object):
         pass
 
     @abc.abstractmethod
-    def stats(self, context, pool_id):
+    def stats(self, context, load_balancer_id):
         pass
 
     @abc.abstractmethod
-    def create_member(self, context, member):
+    def create_member(self, context, load_balancer_id, member):
         """Driver may call the code below in order to update the status.
         self.plugin.update_status(context, Member, member["id"],
                                    constants.ACTIVE)
@@ -121,7 +96,7 @@ class LoadBalancerAbstractDriver(object):
         pass
 
     @abc.abstractmethod
-    def update_member(self, context, old_member, member):
+    def update_member(self, context, load_balancer_id, old_member, member):
         """Driver may call the code below in order to update the status.
         self.plugin.update_status(context, Member,
                                   member["id"], constants.ACTIVE)
@@ -129,20 +104,17 @@ class LoadBalancerAbstractDriver(object):
         pass
 
     @abc.abstractmethod
-    def delete_member(self, context, member):
+    def delete_member(self, context, load_balancer_id, member):
         pass
 
     @abc.abstractmethod
-    def update_pool_health_monitor(self, context,
-                                   old_health_monitor,
-                                   health_monitor,
-                                   pool_id):
+    def update_pool_health_monitor(self, context, load_balancer_id, pool_id,
+                                   old_health_monitor, health_monitor):
         pass
 
     @abc.abstractmethod
-    def create_pool_health_monitor(self, context,
-                                   health_monitor,
-                                   pool_id):
+    def create_pool_health_monitor(self, context, load_balancer_id, pool_id,
+                                   health_monitor):
         """Driver may call the code below in order to update the status.
         self.plugin.update_pool_health_monitor(context,
                                                health_monitor["id"],
@@ -152,5 +124,6 @@ class LoadBalancerAbstractDriver(object):
         pass
 
     @abc.abstractmethod
-    def delete_pool_health_monitor(self, context, health_monitor, pool_id):
+    def delete_pool_health_monitor(self, context, load_balancer_id,
+                                   pool_id, health_monitor):
         pass

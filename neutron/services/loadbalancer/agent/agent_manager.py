@@ -43,7 +43,7 @@ OPTS = [
 
 
 class DeviceNotFoundOnAgent(n_exc.NotFound):
-    msg = _('Unknown device with pool_id %(pool_id)s')
+    msg = _('Unknown device with load_balancer_id %(load_balancer_id)s')
 
 
 class LbaasAgentManager(periodic_task.PeriodicTasks):
@@ -160,48 +160,51 @@ class LbaasAgentManager(periodic_task.PeriodicTasks):
 
         self.remove_orphans()
 
-    def _get_driver(self, pool_id):
-        if pool_id not in self.instance_mapping:
-            raise DeviceNotFoundOnAgent(pool_id=pool_id)
+    def _get_driver(self, load_balancer_id):
+        if load_balancer_id not in self.instance_mapping:
+            raise DeviceNotFoundOnAgent(load_balancer_id=load_balancer_id)
 
-        driver_name = self.instance_mapping[pool_id]
+        driver_name = self.instance_mapping[load_balancer_id]
         return self.device_drivers[driver_name]
 
-    def _reload_load_balancer(self, lb_id):
+    def _reload_load_balancer(self, load_balancer_id):
         try:
-            logical_config = self.plugin_rpc.get_logical_device(lb_id)
+            logical_config = self.plugin_rpc.get_logical_device(load_balancer_id)
             driver_name = logical_config['driver']
             if driver_name not in self.device_drivers:
                 LOG.error(_('No device driver '
                             'on agent: %s.'), driver_name)
                 self.plugin_rpc.update_status(
-                    'load_balancer', lb_id, constants.ERROR)
+                    'load_balancer', load_balancer_id, constants.ERROR)
                 return
 
             self.device_drivers[driver_name].deploy_instance(logical_config)
-            self.instance_mapping[lb_id] = driver_name
-            self.plugin_rpc.load_balancer_deployed(lb_id)
+            self.instance_mapping[load_balancer_id] = driver_name
+            self.plugin_rpc.load_balancer_deployed(load_balancer_id)
         except Exception:
-            LOG.exception(_('Unable to deploy instance for pool: %s'), pool_id)
+            LOG.exception(_('Unable to deploy instance for load balancer: %s'),
+                          load_balancer_id)
             self.needs_resync = True
 
-    def _destroy_load_balancer(self, lb_id):
-        driver = self._get_driver(lb_id)
+    def _destroy_load_balancer(self, load_balancer_id):
+        driver = self._get_driver(load_balancer_id)
         try:
-            driver.undeploy_instance(lb_id)
-            del self.instance_mapping[lb_id]
-            self.plugin_rpc.pool_destroyed(lb_id)
+            driver.undeploy_instance(load_balancer_id)
+            del self.instance_mapping[load_balancer_id]
+            self.plugin_rpc.pool_destroyed(load_balancer_id)
         except Exception:
             LOG.exception(_('Unable to destroy device for load balancer: %s'),
-                          lb_id)
+                          load_balancer_id)
             self.needs_resync = True
 
     def remove_orphans(self):
         for driver_name in self.device_drivers:
-            lb_ids = [lb_id for lb_id in self.instance_mapping
-                        if self.instance_mapping[lb_id] == driver_name]
+            load_balancer_ids = [lb_id for lb_id in self.instance_mapping
+                                 if self.instance_mapping[lb_id] ==
+                                    driver_name]
             try:
-                self.device_drivers[driver_name].remove_orphans(lb_ids)
+                self.device_drivers[driver_name].remove_orphans(
+                    load_balancer_ids)
             except NotImplementedError:
                 pass  # Not all drivers will support this
 
@@ -212,47 +215,89 @@ class LbaasAgentManager(periodic_task.PeriodicTasks):
                        'id': obj_id, 'driver': driver})
         self.plugin_rpc.update_status(obj_type, obj_id, constants.ERROR)
 
-    def create_vip(self, context, vip):
-        driver = self._get_driver(vip['pool_id'])
-        try:
-            driver.create_vip(vip)
-        except Exception:
-            self._handle_failed_driver_call('create', 'vip', vip['id'],
-                                            driver.get_name())
-        else:
-            self.plugin_rpc.update_status('vip', vip['id'], constants.ACTIVE)
-
-    def update_vip(self, context, old_vip, vip):
-        driver = self._get_driver(vip['pool_id'])
-        try:
-            driver.update_vip(old_vip, vip)
-        except Exception:
-            self._handle_failed_driver_call('update', 'vip', vip['id'],
-                                            driver.get_name())
-        else:
-            self.plugin_rpc.update_status('vip', vip['id'], constants.ACTIVE)
-
-    def delete_vip(self, context, vip):
-        driver = self._get_driver(vip['pool_id'])
-        driver.delete_vip(vip)
-
-    def create_pool(self, context, pool, driver_name):
+    def create_load_balancer(self, context, load_balancer, driver_name):
         if driver_name not in self.device_drivers:
             LOG.error(_('No device driver on agent: %s.'), driver_name)
-            self.plugin_rpc.update_status('pool', pool['id'], constants.ERROR)
+            self.plugin_rpc.update_status('load_balancer',
+                                          load_balancer['id'],
+                                          constants.ERROR)
             return
 
         driver = self.device_drivers[driver_name]
+        try:
+            driver.create_load_balancer(load_balancer)
+        except Exception:
+            self._handle_failed_driver_call('create',
+                                            'load_balancer',
+                                            load_balancer['id'],
+                                            driver.get_name())
+        else:
+            self.instance_mapping[load_balancer['id']] = driver_name
+            self.plugin_rpc.update_status('load_balancer',
+                                          load_balancer['id'],
+                                          constants.ACTIVE)
+
+    def update_load_balancer(self, context, old_load_balancer, load_balancer):
+        driver = self._get_driver(load_balancer['id'])
+        try:
+            driver.update_load_balancer(old_load_balancer, load_balancer)
+        except Exception:
+            self._handle_failed_driver_call('update',
+                                            'load_balancer',
+                                            load_balancer['id'],
+                                            driver.get_name())
+        else:
+            self.plugin_rpc.update_status('load_balancer',
+                                          load_balancer['id'],
+                                          constants.ACTIVE)
+
+    def delete_load_balancer(self, context, load_balancer):
+        driver = self._get_driver(load_balancer['id'])
+        driver.delete_load_balancer(load_balancer)
+
+    def create_listener(self, context, load_balancer_id, listener):
+        driver = self._get_driver(listener['id'])
+        try:
+            driver.create_listener(listener)
+        except Exception:
+            self._handle_failed_driver_call('create',
+                                            'listener',
+                                            listener['id'],
+                                            driver.get_name())
+        else:
+            self.plugin_rpc.update_status('listener',
+                                          listener['id'],
+                                          constants.ACTIVE)
+
+    def update_listener(self, context, load_balancer_id, old_listener, listener):
+        driver = self._get_driver(listener['id'])
+        try:
+            driver.update_listener(old_listener, listener)
+        except Exception:
+            self._handle_failed_driver_call('update',
+                                            'listener',
+                                            listener['id'],
+                                            driver.get_name())
+        else:
+            self.plugin_rpc.update_status('listener',
+                                          listener['id'],
+                                          constants.ACTIVE)
+
+    def delete_listener(self, context, load_balancer_id, listener):
+        driver = self._get_driver(listener['id'])
+        driver.delete_load_balancer(listener)
+
+    def create_pool(self, context, load_balancer_id, pool):
+        driver = self._get_driver(load_balancer_id)
         try:
             driver.create_pool(pool)
         except Exception:
             self._handle_failed_driver_call('create', 'pool', pool['id'],
                                             driver.get_name())
         else:
-            # self.instance_mapping[pool['id']] = driver_name
             self.plugin_rpc.update_status('pool', pool['id'], constants.ACTIVE)
 
-    def update_pool(self, context, old_pool, pool):
+    def update_pool(self, context, load_balancer_id, old_pool, pool):
         driver = self._get_driver(pool['id'])
         try:
             driver.update_pool(old_pool, pool)
@@ -262,7 +307,7 @@ class LbaasAgentManager(periodic_task.PeriodicTasks):
         else:
             self.plugin_rpc.update_status('pool', pool['id'], constants.ACTIVE)
 
-    def delete_pool(self, context, pool):
+    def delete_pool(self, context, load_balancer_id, pool):
         driver = self._get_driver(pool['id'])
         driver.delete_pool(pool)
         # del self.instance_mapping[pool['id']]
@@ -331,10 +376,10 @@ class LbaasAgentManager(periodic_task.PeriodicTasks):
             if self.admin_state_up:
                 self.needs_resync = True
             else:
-                for lb_id in self.instance_mapping.keys():
+                for load_balancer_id in self.instance_mapping.keys():
                     LOG.info(_("Destroying load balancer %s due to agent"
                                "disabling"),
-                             lb_id)
+                             load_balancer_id)
                     # self._destroy_pool(pool_id)
-                    self._destroy_load_balancer(lb_id)
+                    self._destroy_load_balancer(load_balancer_id)
             LOG.info(_("Agent_updated by server side %s!"), payload)

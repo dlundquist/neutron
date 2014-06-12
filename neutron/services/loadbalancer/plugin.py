@@ -65,21 +65,22 @@ class LoadBalancerPlugin(ldb.LoadBalancerPluginDb,
         # so prevent policy from being loaded
         ctx = context.get_admin_context(load_admin_roles=False)
         # stop service in case provider was removed, but resources were not
-        self._check_orphan_pool_associations(ctx, self.drivers.keys())
+        self._check_orphan_load_balancer_associations(ctx, self.drivers.keys())
 
-    def _check_orphan_pool_associations(self, context, provider_names):
-        """Checks remaining associations between pools and providers.
+    def _check_orphan_load_balancer_associations(self, context,
+                                                 provider_names):
+        """Checks remaining associations between load balancers and providers.
 
         If admin has not undeployed resources with provider that was deleted
         from configuration, neutron service is stopped. Admin must delete
         resources prior to removing providers from configuration.
         """
-        pools = self.get_pools(context)
-        lost_providers = set([pool['provider'] for pool in pools
-                              if pool['provider'] not in provider_names])
+        lbs = self.get_load_balancers(context)
+        lost_providers = set([lb['provider'] for lb in lbs
+                              if lb['provider'] not in provider_names])
         # resources are left without provider - stop the service
         if lost_providers:
-            msg = _("Delete associated loadbalancer pools before "
+            msg = _("Delete associated loadbalancers before "
                     "removing providers %s") % list(lost_providers)
             LOG.exception(msg)
             raise SystemExit(1)
@@ -91,13 +92,13 @@ class LoadBalancerPlugin(ldb.LoadBalancerPluginDb,
         raise n_exc.Invalid(_("Error retrieving driver for provider %s") %
                             provider)
 
-    def _get_driver_for_pool(self, context, pool_id):
-        pool = self.get_pool(context, pool_id)
+    def _get_driver_for_load_balancer(self, context, lb_id):
+        lb = self.get_load_balancer(context, lb_id)
         try:
-            return self.drivers[pool['provider']]
+            return self.drivers[lb['provider']]
         except KeyError:
-            raise n_exc.Invalid(_("Error retrieving provider for pool %s") %
-                                pool_id)
+            raise n_exc.Invalid(_("Error retrieving provider for load balancer"
+                                  " %s") % lb_id)
 
     def get_plugin_type(self):
         return constants.LOADBALANCER
@@ -105,9 +106,45 @@ class LoadBalancerPlugin(ldb.LoadBalancerPluginDb,
     def get_plugin_description(self):
         return "Neutron LoadBalancer Service Plugin"
 
+    def _error_check_vip_to_load_balancer_conversion(self, context, vip):
+        lbs = self.get_load_balancers(context)
+        pool_id = vip.get('pool_id')
+
+        for lb in lbs:
+            if lb.get('id') == pool_id:
+                raise loadbalancer.VipExists(pool_id=pool_id)
+
+    def _create_vip_port_for_load_balancer(self, context, load_balancer):
+        load_balancer = load_balancer.get('load_balancer')
+        subnet_id = load_balancer.get('vip_subnet_id')
+        ip_address = load_balancer.get('ip_address')
+        subnet = self._core_plugin.get_subnet(context, subnet_id)
+        fixed_ip = {'subnet_id': subnet['id']}
+        if ip_address and ip_address != attrs.ATTR_NOT_SPECIFIED:
+            fixed_ip['ip_address'] = ip_address
+
+        port_data = {
+            'tenant_id': load_balancer.get('tenant_id'),
+            'name': 'load-balancer-vip-' + load_balancer.get('id'),
+            'network_id': subnet['network_id'],
+            'mac_address': attrs.ATTR_NOT_SPECIFIED,
+            'admin_state_up': False,
+            'device_id': '',
+            'device_owner': '',
+            'fixed_ips': [fixed_ip]
+        }
+
+        port = self._core_plugin.create_port(context, {'port': port_data})
+        load_balancer['vip_port_id'] = port['id']
+
     def create_load_balancer_and_listener_from_vip(self, context, vip):
         vip = vip.get('vip')
-        to_lb = {'name': vip.get('name'),
+        self._error_check_vip_to_load_balancer_conversion(context, vip)
+
+        #load balancer will have same id as the vip's pool for the conversion
+        #from old api to new object model
+        to_lb = {'id': vip.get('pool_id'),
+                 'name': vip.get('name'),
                  'description': vip.get('description'),
                  'vip_subnet_id': vip.get('subnet_id'),
                  'connection_limit': vip.get('connection_limit'),
@@ -119,6 +156,12 @@ class LoadBalancerPlugin(ldb.LoadBalancerPluginDb,
                        'default_pool_id': vip.get('pool_id'),
                        'admin_state_up': vip.get('admin_state_up')}
         to_listener = {'listener': to_listener}
+
+        # NOTE: this is something that should be done as a Neutron API call
+        # so LBaaS can be independent
+        to_lb['load_balancer']['ip_address'] = vip.get('ip_address')
+        self._create_vip_port_for_load_balancer(context, to_lb)
+
         lb_dict = super(LoadBalancerPlugin,
                         self).create_load_balancer_and_listener(context,
                                                                 to_lb,
@@ -146,15 +189,9 @@ class LoadBalancerPlugin(ldb.LoadBalancerPluginDb,
 
     def create_vip(self, context, vip):
         lb = self.create_load_balancer_and_listener_from_vip(context, vip)
-        pool = lb.listeners[0].default_pool
-
-        self.service_type_manager.add_resource_association(
-            context,
-            constants.LOADBALANCER,
-            provider_name, p['id'])
-        # driver = self._get_driver_for_pool(context, v['pool_id'])
-        # driver.create_vip(context, v)
-        return self._load_balancer_to_vip(lb_db)
+        driver = self._get_driver_for_load_balancer(context, lb['id'])
+        driver.create_load_balancer(context, lb)
+        return self._load_balancer_to_vip(lb)
 
     def get_vip(self, context, id_, fields=None):
         lb_dict = super(LoadBalancerPlugin, self).get_load_balancer(
@@ -176,9 +213,11 @@ class LoadBalancerPlugin(ldb.LoadBalancerPluginDb,
         driver.update_vip(context, old_vip, v)
         return v
 
-    def _delete_db_vip(self, context, id):
+    def _delete_db_load_balancer(self, context, id):
         # proxy the call until plugin inherits from DBPlugin
-        super(LoadBalancerPlugin, self).delete_vip(context, id)
+        load_balancer = self.get_load_balancer(context, id)
+        super(LoadBalancerPlugin, self).delete_load_balancer(context, id)
+        self._core_plugin.delete_port(context, load_balancer['vip_port_id'])
 
     def delete_vip(self, context, id):
         self.update_status(context, ldb.Vip,
@@ -189,7 +228,7 @@ class LoadBalancerPlugin(ldb.LoadBalancerPluginDb,
 
     def _get_provider_name(self, context, entity):
         if ('provider' in entity and
-            entity['provider'] != attrs.ATTR_NOT_SPECIFIED):
+                entity['provider'] != attrs.ATTR_NOT_SPECIFIED):
             provider_name = pconf.normalize_provider_name(entity['provider'])
             self.validate_provider(provider_name)
             return provider_name
@@ -211,17 +250,17 @@ class LoadBalancerPlugin(ldb.LoadBalancerPluginDb,
             provider_name, p['id'])
         #need to add provider name to pool dict,
         #because provider was not known to db plugin at pool creation
-        p['provider'] = provider_name
-        driver = self.drivers[provider_name]
-        try:
-            driver.create_pool(context, p)
-        except loadbalancer.NoEligibleBackend:
-        #     that should catch cases when backend of any kind
-        #     is not available (agent, appliance, etc)
-            self.update_status(context, ldb.Pool,
-                               p['id'], constants.ERROR,
-                               "No eligible backend")
-            raise loadbalancer.NoEligibleBackend(pool_id=p['id'])
+        # p['provider'] = provider_name
+        # driver = self.drivers[provider_name]
+        # try:
+        #     driver.create_pool(context, p)
+        # except loadbalancer.NoEligibleBackend:
+        # #     that should catch cases when backend of any kind
+        # #     is not available (agent, appliance, etc)
+        #     self.update_status(context, ldb.Pool,
+        #                        p['id'], constants.ERROR,
+        #                        "No eligible backend")
+        #     raise loadbalancer.NoEligibleBackend(pool_id=p['id'])
         return p
 
     def update_pool(self, context, id, pool):
@@ -263,19 +302,32 @@ class LoadBalancerPlugin(ldb.LoadBalancerPluginDb,
         driver.delete_pool(context, p)
 
     def create_member(self, context, member):
-        m = super(LoadBalancerPlugin, self).create_member(context, member)
-        driver = self._get_driver_for_pool(context, m['pool_id'])
-        driver.create_member(context, m)
-        return m
+        member_db = super(LoadBalancerPlugin, self).create_member(context,
+                                                                  member)
+        load_balancers = self._get_pool_load_balancers(context,
+                                                       member_db['pool_id'])
+        if load_balancers and len(load_balancers) > 0:
+            for load_balancer in load_balancers:
+                driver = self._get_driver_for_load_balancer(
+                    context, load_balancer['id'])
+                driver.create_member(context, load_balancer['id'], member_db)
+        return member_db
 
     def update_member(self, context, id, member):
         if 'status' not in member['member']:
             member['member']['status'] = constants.PENDING_UPDATE
-        old_member = self.get_member(context, id)
-        m = super(LoadBalancerPlugin, self).update_member(context, id, member)
-        driver = self._get_driver_for_pool(context, m['pool_id'])
-        driver.update_member(context, old_member, m)
-        return m
+        old_member_db = self.get_member(context, id)
+        member_db = super(LoadBalancerPlugin, self).update_member(context, id,
+                                                                  member)
+        load_balancers = self._get_pool_load_balancers(context,
+                                                       member_db['pool_id'])
+        if load_balancers and len(load_balancers) > 0:
+            for load_balancer in load_balancers:
+                driver = self._get_driver_for_load_balancer(
+                    context, load_balancer['id'])
+                driver.update_member(context, load_balancer['id'],
+                                     old_member_db, member_db)
+        return member_db
 
     def _delete_db_member(self, context, id):
         # proxy the call until plugin inherits from DBPlugin
@@ -284,9 +336,15 @@ class LoadBalancerPlugin(ldb.LoadBalancerPluginDb,
     def delete_member(self, context, id):
         self.update_status(context, ldb.Member,
                            id, constants.PENDING_DELETE)
-        m = self.get_member(context, id)
-        driver = self._get_driver_for_pool(context, m['pool_id'])
-        driver.delete_member(context, m)
+        member_db = self.get_member(context, id)
+        load_balancers = self._get_pool_load_balancers(context,
+                                                       member_db['pool_id'])
+        if load_balancers and len(load_balancers) > 0:
+            for load_balancer in load_balancers:
+                driver = self._get_driver_for_load_balancer(
+                    context, load_balancer['id'])
+                driver.delete_member(context, load_balancer['id'], member_db)
+        return member_db
 
     def _validate_hm_parameters(self, delay, timeout):
         if delay < timeout:

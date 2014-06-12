@@ -59,8 +59,12 @@ def save_config(conf_path, logical_config, socket_path=None,
     data.extend(_build_global(logical_config, socket_path=socket_path,
                               user_group=user_group))
     data.extend(_build_defaults(logical_config))
-    data.extend(_build_frontend(logical_config))
-    data.extend(_build_backend(logical_config))
+    frontends = _build_frontend(logical_config)
+    for frontend in frontends:
+        data.extend(frontend)
+    backends = _build_backend(logical_config)
+    for backend in backends:
+        data.extend(backend)
     utils.replace_file(conf_path, '\n'.join(data))
 
 
@@ -93,65 +97,71 @@ def _build_defaults(config):
 
 
 def _build_frontend(config):
-    protocol = config['vip']['protocol']
+    #TODO: Handle multiple listeners correctly
+    port = config['load_balancer']['vip_port']
+    connection_limit = config['load_balancer']['connection_limit']
+    frontends = []
+    for listener in config['load_balancer']['listeners']:
+        protocol = listener['protocol']
 
-    opts = [
-        'option tcplog',
-        'bind %s:%d' % (
-            _get_first_ip_from_port(config['vip']['port']),
-            config['vip']['protocol_port']
-        ),
-        'mode %s' % PROTOCOL_MAP[protocol],
-        'default_backend %s' % config['pool']['id'],
-    ]
+        opts = [
+            'option tcplog',
+            'bind %s:%d' % (
+                _get_first_ip_from_port(port),
+                listener['protocol_port']
+            ),
+            'mode %s' % PROTOCOL_MAP[protocol],
+            'default_backend %s' % listener['default_pool_id'],
+        ]
 
-    if config['vip']['connection_limit'] >= 0:
-        opts.append('maxconn %s' % config['vip']['connection_limit'])
+        if connection_limit >= 0:
+            opts.append('maxconn %s' % connection_limit)
 
-    if protocol == constants.PROTOCOL_HTTP:
-        opts.append('option forwardfor')
+        if protocol == constants.PROTOCOL_HTTP:
+            opts.append('option forwardfor')
 
-    return itertools.chain(
-        ['frontend %s' % config['vip']['id']],
-        ('\t' + o for o in opts)
-    )
+        frontends.append(
+            itertools.chain(['frontend %s' % listener['id']],
+                            ('\t' + o for o in opts)))
+    return frontends
 
 
 def _build_backend(config):
-    protocol = config['pool']['protocol']
-    lb_method = config['pool']['lb_method']
-
-    opts = [
-        'mode %s' % PROTOCOL_MAP[protocol],
-        'balance %s' % BALANCE_MAP.get(lb_method, 'roundrobin')
-    ]
-
-    if protocol == constants.PROTOCOL_HTTP:
-        opts.append('option forwardfor')
-
-    # add the first health_monitor (if available)
-    server_addon, health_opts = _get_server_health_option(config)
-    opts.extend(health_opts)
-
-    # add session persistence (if available)
-    persist_opts = _get_session_persistence(config)
-    opts.extend(persist_opts)
-
-    # add the members
-    for member in config['members']:
-        if ((member['status'] in ACTIVE_PENDING_STATUSES or
-             member['status'] == INACTIVE)
-            and member['admin_state_up']):
-            server = (('server %(id)s %(address)s:%(protocol_port)s '
-                       'weight %(weight)s') % member) + server_addon
-            if _has_http_cookie_persistence(config):
-                server += ' cookie %d' % config['members'].index(member)
-            opts.append(server)
-
-    return itertools.chain(
-        ['backend %s' % config['pool']['id']],
-        ('\t' + o for o in opts)
-    )
+    backends = []
+    for listener in config['load_balancer']['listeners']:
+        pool = listener['default_pool']
+        protocol = pool['protocol']
+        lb_method = pool['lb_method']
+    
+        opts = [
+            'mode %s' % PROTOCOL_MAP[protocol],
+            'balance %s' % BALANCE_MAP.get(lb_method, 'roundrobin')
+        ]
+    
+        if protocol == constants.PROTOCOL_HTTP:
+            opts.append('option forwardfor')
+    
+        # add the first health_monitor (if available)
+        server_addon, health_opts = _get_server_health_option(pool)
+        opts.extend(health_opts)
+    
+        # add session persistence (if available)
+        persist_opts = _get_session_persistence(config)
+        opts.extend(persist_opts)
+    
+        # add the members
+        for member in pool['members']:
+            if ((member['status'] in ACTIVE_PENDING_STATUSES or
+                 member['status'] == INACTIVE)
+                and member['admin_state_up']):
+                server = (('server %(id)s %(address)s:%(protocol_port)s '
+                           'weight %(weight)s') % member) + server_addon
+                if _has_http_cookie_persistence(config):
+                    server += ' cookie %d' % config['members'].index(member)
+                opts.append(server)
+        backends.append(itertools.chain(['backend %s' % pool['id']],
+                                        ('\t' + o for o in opts)))
+    return backends
 
 
 def _get_first_ip_from_port(port):
@@ -161,6 +171,8 @@ def _get_first_ip_from_port(port):
 
 def _get_server_health_option(config):
     """return the first active health option."""
+    if 'healthmonitors' not in config:
+        return '', []
     for monitor in config['healthmonitors']:
         # not checking the status of healthmonitor for two reasons:
         # 1) status field is absent in HealthMonitor model
@@ -191,7 +203,7 @@ def _get_server_health_option(config):
 
 
 def _get_session_persistence(config):
-    persistence = config['vip'].get('session_persistence')
+    persistence = config['load_balancer'].get('session_persistence')
     if not persistence:
         return []
 

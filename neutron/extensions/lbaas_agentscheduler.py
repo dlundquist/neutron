@@ -154,7 +154,7 @@ class NoEligibleLbaasAgent(loadbalancer.NoEligibleBackend):
 
 class NoEligibleLbaasLoadBalancerAgent(loadbalancer.NoEligibleBackend):
     message = _("No elgible load balancer agent found "
-                "for load balancer %(lb_id)s.")
+                "for load balancer %(load_balancer_id)s.")
 
 
 class NoActiveLbaasAgent(agent.AgentNotFound):

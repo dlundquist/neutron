@@ -109,7 +109,7 @@ class TestHaproxyNSDriver(base.BaseTestCase):
         ) as (gsp, kill, unplug, ip_wrap, isdir, rmtree):
             gsp.side_effect = lambda x, y: '/pool/' + y
 
-            self.driver.pool_to_port_id['pool_id'] = 'port_id'
+            self.driver.load_balancer_to_port_id['pool_id'] = 'port_id'
             isdir.return_value = True
 
             self.driver.undeploy_instance('pool_id')

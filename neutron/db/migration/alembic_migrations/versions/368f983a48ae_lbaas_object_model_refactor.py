@@ -96,24 +96,36 @@ def upgrade(active_plugins=None, options=None):
 
     op.create_table(
         u'loadbalancerlistenerassociations',
-        sa.Column(u'loadbalancer_id', sa.String(255), nullable=False),
+        sa.Column(u'load_balancer_id', sa.String(255), nullable=False),
         sa.Column(u'listener_id', sa.String(255), nullable=False),
-        sa.ForeignKeyConstraint(['loadbalancer_id'], ['loadbalancers.id']),
+        sa.ForeignKeyConstraint(['load_balancer_id'], ['loadbalancers.id']),
         sa.ForeignKeyConstraint(['listener_id'], ['listeners.id']),
-        sa.PrimaryKeyConstraint(u'loadbalancer_id', u'listener_id')
+        sa.PrimaryKeyConstraint(u'load_balancer_id', u'listener_id')
     )
 
     op.create_table(
         u'loadbalanceragentbindings',
-        sa.Column('loadbalancer_id', sa.String(36), nullable=False),
+        sa.Column('load_balancer_id', sa.String(36), nullable=False),
         sa.Column('agent_id', sa.String(36), nullable=False),
         sa.ForeignKeyConstraint(['agent_id'],
                                 ['agents.id'],
                                 ondelete='CASCADE'),
-        sa.ForeignKeyConstraint(['loadbalancer_id'],
+        sa.ForeignKeyConstraint(['load_balancer_id'],
                                 ['loadbalancers.id'],
                                 ondelete='CASCADE'),
-        sa.PrimaryKeyConstraint('loadbalancer_id')
+        sa.PrimaryKeyConstraint('load_balancer_id')
+    )
+
+    op.create_table(
+        u'loadbalancerstatistics',
+        sa.Column(u'load_balancer_id', sa.String(36), nullable=False),
+        sa.Column(u'bytes_in', sa.BigInteger(20), nullable=False),
+        sa.Column(u'bytes_out', sa.BigInteger(20), nullable=False),
+        sa.Column(u'active_connections', sa.BigInteger(20), nullable=False),
+        sa.Column(u'total_connections', sa.BigInteger(20), nullable=False),
+        sa.PrimaryKeyConstraint(u'load_balancer_id'),
+        sa.ForeignKeyConstraint([u'load_balancer_id'],
+                                [u'loadbalancers.id'])
     )
 
 
@@ -121,6 +133,7 @@ def downgrade(active_plugins=None, options=None):
     if not migration.should_run(active_plugins, migration_for_plugins):
         return
 
+    op.drop_table(u'loadbalancerstatistics')
     op.drop_table(u'loadbalanceragentbindings')
     op.drop_table(u'loadbalancerlistenerassociations')
     op.drop_table(u'listeners')

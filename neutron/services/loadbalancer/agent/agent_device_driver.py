@@ -47,39 +47,43 @@ class AgentDeviceDriver(object):
         raise NotImplementedError()
 
     @abc.abstractmethod
-    def create_vip(self, vip):
+    def create_load_balancer(self, load_balancer):
         pass
 
     @abc.abstractmethod
-    def update_vip(self, old_vip, vip):
+    def update_load_balancer(self, old_load_balancer, load_balancer):
         pass
 
     @abc.abstractmethod
-    def delete_vip(self, vip):
+    def delete_load_balancer(self, load_balancer):
         pass
 
     @abc.abstractmethod
-    def create_pool(self, pool):
+    def update_listener(self, load_balancer_id, old_listener, listener):
         pass
 
     @abc.abstractmethod
-    def update_pool(self, old_pool, pool):
+    def delete_listener(self, load_balancer_id, listener):
         pass
 
     @abc.abstractmethod
-    def delete_pool(self, pool):
+    def update_pool(self, load_balancer_id, old_pool, pool):
         pass
 
     @abc.abstractmethod
-    def create_member(self, member):
+    def delete_pool(self, load_balancer_id, pool):
         pass
 
     @abc.abstractmethod
-    def update_member(self, old_member, member):
+    def create_member(self, load_balancer_id, member):
         pass
 
     @abc.abstractmethod
-    def delete_member(self, member):
+    def update_member(self, load_balancer_id, old_member, member):
+        pass
+
+    @abc.abstractmethod
+    def delete_member(self, load_balancer_id, member):
         pass
 
     @abc.abstractmethod

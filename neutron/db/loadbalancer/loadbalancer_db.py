@@ -17,6 +17,7 @@
 
 import sqlalchemy as sa
 from sqlalchemy import orm
+from sqlalchemy.ext import declarative
 from sqlalchemy.orm import exc
 from sqlalchemy.orm import validates
 
@@ -73,9 +74,35 @@ class PoolStatistics(model_base.BASEV2):
         return value
 
 
+class LoadBalancerStatistics(model_base.BASEV2):
+    """Represents pool statistics."""
+
+    load_balancer_id = sa.Column(sa.String(36),
+                                 sa.ForeignKey("loadbalancers.id"),
+                                 primary_key=True)
+    bytes_in = sa.Column(sa.BigInteger, nullable=False)
+    bytes_out = sa.Column(sa.BigInteger, nullable=False)
+    active_connections = sa.Column(sa.BigInteger, nullable=False)
+    total_connections = sa.Column(sa.BigInteger, nullable=False)
+
+    @validates('bytes_in', 'bytes_out',
+               'active_connections', 'total_connections')
+    def validate_non_negative_int(self, key, value):
+        if value < 0:
+            data = {'key': key, 'value': value}
+            raise ValueError(_('The %(key)s field can not have '
+                               'negative value. '
+                               'Current value is %(value)d.') % data)
+        return value
+
+    @declarative.declared_attr
+    def __tablename__(cls):
+        return "loadbalancerstatistics"
+
+
 class Vip(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant,
           models_v2.HasStatusDescription):
-    """Represents a v2 neutron loadbalancer vip."""
+    """Represents a v2 neutron load balancer vip."""
 
     name = sa.Column(sa.String(255))
     description = sa.Column(sa.String(255))
@@ -94,17 +121,18 @@ class Vip(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant,
 
 
 class LoadBalancer(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
-    """Represents a v2 neutron loadbalancer."""
+    """Represents a v2 neutron load balancer."""
     name = sa.Column(sa.String(255))
     description = sa.Column(sa.String(255))
     vip_subnet_id = sa.Column(sa.String(36))
-    vip_port_id = sa.Column(sa.String(36))
+    vip_port_id = sa.Column(sa.String(36), sa.ForeignKey('ports.id'))
     connection_limit = sa.Column(sa.Integer)
     status = sa.Column(sa.String(16))
     admin_state_up = sa.Column(sa.Boolean(), nullable=False)
     listeners = orm.relationship("Listener",
                                  secondary="loadbalancerlistenerassociations",
                                  backref="loadbalancers")
+    vip_port = orm.relationship(models_v2.Port)
     provider = orm.relationship(
         st_db.ProviderResourceAssociation,
         uselist=False,
@@ -116,7 +144,7 @@ class LoadBalancer(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
 
 class Listener(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
     """Represents a v2 neutron listener."""
-    default_pool_id = sa.Column(sa.String(36))
+    default_pool_id = sa.Column(sa.String(36), sa.ForeignKey("pools.id"))
     protocol = sa.Column(sa.String(36))
     protocol_port = sa.Column(sa.Integer)
     admin_state_up = sa.Column(sa.Boolean(), nullable=False)
@@ -125,9 +153,9 @@ class Listener(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
 
 class LoadBalancerListenerAssociation(model_base.BASEV2):
     """Many-to-Many association between LoadBalancer and Listener."""
-    loadbalancer_id = sa.Column(sa.String(36),
-                                sa.ForeignKey("loadbalancers.id"),
-                                primary_key=True)
+    load_balancer_id = sa.Column(sa.String(36),
+                                 sa.ForeignKey("loadbalancers.id"),
+                                 primary_key=True)
     listener_id = sa.Column(sa.String(36),
                             sa.ForeignKey("listeners.id"),
                             primary_key=True)
@@ -135,7 +163,7 @@ class LoadBalancerListenerAssociation(model_base.BASEV2):
 
 class Member(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant,
              models_v2.HasStatusDescription):
-    """Represents a v2 neutron loadbalancer member."""
+    """Represents a v2 neutron load balancer member."""
 
     __table_args__ = (
         sa.schema.UniqueConstraint('pool_id', 'address', 'protocol_port',
@@ -151,7 +179,7 @@ class Member(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant,
 
 class Pool(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant,
            models_v2.HasStatusDescription):
-    """Represents a v2 neutron loadbalancer pool."""
+    """Represents a v2 neutron load balancer pool."""
 
     vip_id = sa.Column(sa.String(36), sa.ForeignKey("vips.id"))
     name = sa.Column(sa.String(255))
@@ -184,7 +212,7 @@ class Pool(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant,
 
 
 class HealthMonitor(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
-    """Represents a v2 neutron loadbalancer healthmonitor."""
+    """Represents a v2 neutron load balancer healthmonitor."""
 
     type = sa.Column(sa.Enum("PING", "TCP", "HTTP", "HTTPS",
                              name="healthmontiors_type"),
@@ -217,9 +245,9 @@ class PoolMonitorAssociation(model_base.BASEV2,
 
 class LoadBalancerPluginDb(loadbalancer.LoadBalancerPluginBase,
                            base_db.CommonDbMixin):
-    """Wraps loadbalancer with SQLAlchemy models.
+    """Wraps load balancer with SQLAlchemy models.
 
-    A class that wraps the implementation of the Neutron loadbalancer
+    A class that wraps the implementation of the Neutron load balancer
     plugin database access interface using SQLAlchemy models.
     """
 
@@ -245,7 +273,8 @@ class LoadBalancerPluginDb(loadbalancer.LoadBalancerPluginBase,
             # update status_description in two cases:
             # - new value is passed
             # - old value is not None (needs to be updated anyway)
-            if status_description or v_db['status_description']:
+            if hasattr(v_db, 'status_description') and (
+                    status_description or v_db['status_description']):
                 v_db.status_description = status_description
 
     def _get_resource(self, context, model, id):
@@ -283,7 +312,10 @@ class LoadBalancerPluginDb(loadbalancer.LoadBalancerPluginBase,
                'connection_limit': lb.connection_limit,
                'admin_state_up': lb.admin_state_up,
                'status': lb.status,
+               'provider': None,
                'listeners': []}
+        if hasattr(lb, 'provider') and hasattr(lb.provider, 'provider_name'):
+            res['provider'] = lb.provider.provider_name
         if hasattr(lb, 'listeners'):
             for listener in lb.listeners:
                 res['listeners'].append(self._make_listener_dict(
@@ -319,6 +351,11 @@ class LoadBalancerPluginDb(loadbalancer.LoadBalancerPluginBase,
         return self._get_collection(context, LoadBalancer,
                                     self._make_load_balancer_dict,
                                     filters=filters, fields=fields)
+
+    def delete_load_balancer(self, context, id):
+        with context.session.begin(subtransactions=True):
+            load_balancer = self._get_resource(context, LoadBalancer, id)
+            context.session.delete(load_balancer)
 
     ################################################################
     #Listener DB Access
@@ -368,13 +405,34 @@ class LoadBalancerPluginDb(loadbalancer.LoadBalancerPluginBase,
         listener = listener.get('listener')
         tenant_id = self._get_tenant_id_for_create(context, lb)
 
+        #So pool_id can be the same as load balancer for old api
+        #conversion
+        lb_id = uuidutils.generate_uuid()
+        if lb.get('id') and len(lb.get('id')) > 0:
+            lb_id = lb.get('id')
         with context.session.begin(subtransactions=True):
 
-            lb_db = LoadBalancer(id=uuidutils.generate_uuid(),
+            if listener.get('default_pool_id'):
+                pool = self._get_resource(context, Pool,
+                                          listener.get('default_pool_id'))
+                # validate that the pool has same tenant
+                if pool['tenant_id'] != tenant_id:
+                    raise n_exc.NotAuthorized()
+                # validate that the pool has same protocol
+                if pool['protocol'] != listener['protocol']:
+                    raise loadbalancer.ProtocolMismatch(
+                        vip_proto=listener['protocol'],
+                        pool_proto=pool['protocol'])
+                if pool['status'] == constants.PENDING_DELETE:
+                    raise loadbalancer.StateInvalid(state=pool['status'],
+                                                    id=pool['id'])
+
+            lb_db = LoadBalancer(id=lb_id,
                                  tenant_id=tenant_id,
                                  name=lb['name'],
                                  description=lb['description'],
                                  vip_subnet_id=lb['vip_subnet_id'],
+                                 vip_port_id=lb['vip_port_id'],
                                  connection_limit=lb['connection_limit'],
                                  admin_state_up=lb['admin_state_up'],
                                  status=constants.PENDING_CREATE)
@@ -390,7 +448,7 @@ class LoadBalancerPluginDb(loadbalancer.LoadBalancerPluginBase,
             context.session.add(lb_db)
             context.session.add(listener_db)
             context.session.flush()
-        return self._make_load_balancer_dict(lb_db, fields=fields)
+        return self._make_load_balancer_dict(lb_db)
 
     ########################################################
     # VIP DB access
@@ -961,3 +1019,6 @@ class LoadBalancerPluginDb(loadbalancer.LoadBalancerPluginBase,
         return self._get_collection(context, HealthMonitor,
                                     self._make_health_monitor_dict,
                                     filters=filters, fields=fields)
+
+    def _get_pool_load_balancers(self, context, pool_id):
+        pass

@@ -66,6 +66,7 @@ cfg.CONF.register_opts(OPTS, 'haproxy')
 
 
 class HaproxyNSDriver(agent_device_driver.AgentDeviceDriver):
+
     def __init__(self, conf, plugin_rpc):
         self.conf = conf
         self.root_helper = config.get_root_helper(conf)
@@ -80,17 +81,17 @@ class HaproxyNSDriver(agent_device_driver.AgentDeviceDriver):
 
         self.vif_driver = vif_driver
         self.plugin_rpc = plugin_rpc
-        self.pool_to_port_id = {}
+        self.load_balancer_to_port_id = {}
 
     @classmethod
     def get_name(cls):
         return DRIVER_NAME
 
     def create(self, logical_config):
-        pool_id = logical_config['pool']['id']
-        namespace = get_ns_name(pool_id)
+        load_balancer_id = logical_config['load_balancer']['id']
+        namespace = get_ns_name(load_balancer_id)
 
-        self._plug(namespace, logical_config['vip']['port'])
+        self._plug(namespace, logical_config['load_balancer']['vip_port'])
         self._spawn(logical_config)
 
     def update(self, logical_config):
@@ -102,11 +103,11 @@ class HaproxyNSDriver(agent_device_driver.AgentDeviceDriver):
         self._spawn(logical_config, extra_args)
 
     def _spawn(self, logical_config, extra_cmd_args=()):
-        pool_id = logical_config['pool']['id']
-        namespace = get_ns_name(pool_id)
-        conf_path = self._get_state_file_path(pool_id, 'conf')
-        pid_path = self._get_state_file_path(pool_id, 'pid')
-        sock_path = self._get_state_file_path(pool_id, 'sock')
+        load_balancer_id = logical_config['load_balancer']['id']
+        namespace = get_ns_name(load_balancer_id)
+        conf_path = self._get_state_file_path(load_balancer_id, 'conf')
+        pid_path = self._get_state_file_path(load_balancer_id, 'pid')
+        sock_path = self._get_state_file_path(load_balancer_id, 'sock')
         user_group = self.conf.haproxy.user_group
 
         hacfg.save_config(conf_path, logical_config, sock_path, user_group)
@@ -116,21 +117,23 @@ class HaproxyNSDriver(agent_device_driver.AgentDeviceDriver):
         ns = ip_lib.IPWrapper(self.root_helper, namespace)
         ns.netns.execute(cmd)
 
-        # remember the pool<>port mapping
-        self.pool_to_port_id[pool_id] = logical_config['vip']['port']['id']
+        # remember the load balancer<>port mapping
+        port_id = logical_config['load_balancer']['vip_port_id']
+        self.load_balancer_to_port_id[load_balancer_id] = port_id
 
     @n_utils.synchronized('haproxy-driver')
-    def undeploy_instance(self, lb_id, cleanup_namespace=False):
-        namespace = get_ns_name(pool_id)
+    def undeploy_instance(self, load_balancer_id, cleanup_namespace=False):
+        namespace = get_ns_name(load_balancer_id)
         ns = ip_lib.IPWrapper(self.root_helper, namespace)
-        pid_path = self._get_state_file_path(pool_id, 'pid')
+        pid_path = self._get_state_file_path(load_balancer_id, 'pid')
 
         # kill the process
         kill_pids_in_file(self.root_helper, pid_path)
 
         # unplug the ports
-        if pool_id in self.pool_to_port_id:
-            self._unplug(namespace, self.pool_to_port_id[pool_id])
+        if load_balancer_id in self.load_balancer_to_port_id:
+            self._unplug(namespace,
+                         self.load_balancer_to_port_id[load_balancer_id])
 
         # delete all devices from namespace;
         # used when deleting orphans and port_id is not known for pool_id
@@ -139,16 +142,17 @@ class HaproxyNSDriver(agent_device_driver.AgentDeviceDriver):
                 self.vif_driver.unplug(device.name, namespace=namespace)
 
         # remove the configuration directory
-        conf_dir = os.path.dirname(self._get_state_file_path(pool_id, ''))
+        conf_dir = os.path.dirname(
+            self._get_state_file_path(load_balancer_id, ''))
         if os.path.isdir(conf_dir):
             shutil.rmtree(conf_dir)
         ns.garbage_collect_namespace()
 
-    def exists(self, pool_id):
-        namespace = get_ns_name(pool_id)
+    def exists(self, load_balancer_id):
+        namespace = get_ns_name(load_balancer_id)
         root_ns = ip_lib.IPWrapper(self.root_helper)
 
-        socket_path = self._get_state_file_path(pool_id, 'sock')
+        socket_path = self._get_state_file_path(load_balancer_id, 'sock')
         if root_ns.netns.exists(namespace) and os.path.exists(socket_path):
             try:
                 s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
@@ -298,54 +302,50 @@ class HaproxyNSDriver(agent_device_driver.AgentDeviceDriver):
     def deploy_instance(self, logical_config):
         # do actual deploy only if vip and pool are configured and active
         if (not logical_config or
-                'vip' not in logical_config or
-                (logical_config['vip']['status'] not in
+                'load_balancer' not in logical_config or
+                (logical_config['load_balancer']['status'] not in
                  constants.ACTIVE_PENDING_STATUSES) or
-                not logical_config['vip']['admin_state_up'] or
-                (logical_config['pool']['status'] not in
-                 constants.ACTIVE_PENDING_STATUSES) or
-                not logical_config['pool']['admin_state_up']):
+                not logical_config['load_balancer']['admin_state_up']):
             return
 
-        if self.exists(logical_config['pool']['id']):
+        if self.exists(logical_config['load_balancer']['id']):
             self.update(logical_config)
         else:
             self.create(logical_config)
 
-    def _refresh_device(self, pool_id):
-        logical_config = self.plugin_rpc.get_logical_device(pool_id)
+    def _refresh_device(self, load_balancer_id):
+        logical_config = self.plugin_rpc.get_logical_device(load_balancer_id)
         self.deploy_instance(logical_config)
 
-    def create_vip(self, vip):
-        self._refresh_device(vip['pool_id'])
+    def create_load_balancer(self, load_balancer):
+        self._refresh_device(load_balancer['id'])
 
-    def update_vip(self, old_vip, vip):
-        self._refresh_device(vip['pool_id'])
+    def update_load_balancer(self, old_load_balancer, load_balancer):
+        self._refresh_device(load_balancer['id'])
 
-    def delete_vip(self, vip):
-        self.undeploy_instance(vip['pool_id'])
+    def delete_load_balancer(self, load_balancer):
+        self.undeploy_instance(load_balancer['id'])
 
-    def create_pool(self, pool):
-        # nothing to do here because a pool needs a vip to be useful
-        pass
+    def update_listener(self, load_balancer_id, old_listener, listener):
+        self._refresh_device(load_balancer_id)
 
-    def update_pool(self, old_pool, pool):
-        self._refresh_device(pool['id'])
+    def delete_listener(self, load_balancer_id, listener):
+        self._refresh_device(load_balancer_id)
 
-    def delete_pool(self, pool):
-        # delete_pool may be called before vip deletion in case
-        # pool's admin state set to down
-        if self.exists(pool['id']):
-            self.undeploy_instance(pool['id'])
+    def update_pool(self, load_balancer_id, old_pool, pool):
+        self._refresh_device(load_balancer_id)
 
-    def create_member(self, member):
-        self._refresh_device(member['pool_id'])
+    def delete_pool(self, load_balancer_id, pool):
+        self._refresh_device(load_balancer_id)
 
-    def update_member(self, old_member, member):
-        self._refresh_device(member['pool_id'])
+    def create_member(self, load_balancer_id, member):
+        self._refresh_device(load_balancer_id)
 
-    def delete_member(self, member):
-        self._refresh_device(member['pool_id'])
+    def update_member(self, load_balancer_id, old_member, member):
+        self._refresh_device(load_balancer_id)
+
+    def delete_member(self, load_balancer_id, member):
+        self._refresh_device(load_balancer_id)
 
     def create_pool_health_monitor(self, health_monitor, pool_id):
         self._refresh_device(pool_id)
