@@ -454,7 +454,8 @@ class AgentDriverBase(abstract_driver.LoadBalancerAbstractDriver):
                                                 agent['host'])
 
     def delete_load_balancer(self, context, load_balancer):
-        # self.plugin._delete_db_vip(context, load_balancer['id'])
+        self.plugin._delete_db_load_balancer_and_listeners(context,
+                                                           load_balancer['id'])
         agent = self.get_load_balancer_agent(context, load_balancer['id'])
         self.agent_rpc.delete_load_balancer(context,
                                             load_balancer, agent['host'])

@@ -100,6 +100,14 @@ class LoadBalancerPlugin(ldb.LoadBalancerPluginDb,
             raise n_exc.Invalid(_("Error retrieving provider for load balancer"
                                   " %s") % lb_id)
 
+    def _get_driver_for_pool(self, context, pool_id):
+        pool = self.get_pool(context, pool_id)
+        try:
+            return self.drivers[pool['provider']]
+        except KeyError:
+            raise n_exc.Invalid(_("Error retrieving provider for pool"
+                                  " %s") % pool_id)
+
     def get_plugin_type(self):
         return constants.LOADBALANCER
 
@@ -189,7 +197,9 @@ class LoadBalancerPlugin(ldb.LoadBalancerPluginDb,
 
     def create_vip(self, context, vip):
         lb = self.create_load_balancer_and_listener_from_vip(context, vip)
-        driver = self._get_driver_for_load_balancer(context, lb['id'])
+        #load balancer id will be the same as the pool id provided in vip
+        #for backwards compatibility from old to new API
+        driver = self._get_driver_for_pool(context, lb['id'])
         driver.create_load_balancer(context, lb)
         return self._load_balancer_to_vip(lb)
 
@@ -213,10 +223,11 @@ class LoadBalancerPlugin(ldb.LoadBalancerPluginDb,
         driver.update_vip(context, old_vip, v)
         return v
 
-    def _delete_db_load_balancer_and_listener(self, context, id):
+    def _delete_db_load_balancer_and_listeners(self, context, id):
         # proxy the call until plugin inherits from DBPlugin
-        load_balancer = self.get_load_balancer(context, id)
-        super(LoadBalancerPlugin, self).delete_load_balancer(context, id)
+        load_balancer = self._get_resource(context, ldb.LoadBalancer, id)
+        super(LoadBalancerPlugin, self).delete_load_balancer_and_listeners(
+            context, id)
         self._core_plugin.delete_port(context, load_balancer['vip_port_id'])
 
     def delete_vip(self, context, id):

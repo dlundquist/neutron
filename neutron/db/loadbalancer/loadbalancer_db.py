@@ -138,7 +138,11 @@ class LoadBalancer(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
         uselist=False,
         lazy="joined",
         primaryjoin="LoadBalancer.id==ProviderResourceAssociation.resource_id",
-        foreign_keys=[st_db.ProviderResourceAssociation.resource_id]
+        foreign_keys=[st_db.ProviderResourceAssociation.resource_id],
+        #this is only for old API backwards compatibility because when a load
+        #balancer is deleted the pool ID should be the same as the load
+        #balancer ID and should not be cleared out in this table
+        viewonly=True
     )
 
 
@@ -352,9 +356,11 @@ class LoadBalancerPluginDb(loadbalancer.LoadBalancerPluginBase,
                                     self._make_load_balancer_dict,
                                     filters=filters, fields=fields)
 
-    def delete_load_balancer(self, context, id):
+    def delete_load_balancer_and_listeners(self, context, id):
         with context.session.begin(subtransactions=True):
             load_balancer = self._get_resource(context, LoadBalancer, id)
+            for listener in load_balancer.listeners:
+                context.session.delete(listener)
             context.session.delete(load_balancer)
 
     ################################################################
