@@ -777,7 +777,7 @@ class LoadBalancerPluginDb(loadbalancer.LoadBalancerPluginBase,
                            protocol=v['protocol'],
                            lb_method=v['lb_method'],
                            admin_state_up=v['admin_state_up'],
-                           status=constants.PENDING_CREATE)
+                           status=constants.ACTIVE)
             pool_db.stats = self._create_pool_stats(context, pool_db['id'])
             context.session.add(pool_db)
 
@@ -794,7 +794,8 @@ class LoadBalancerPluginDb(loadbalancer.LoadBalancerPluginBase,
         return self._make_pool_dict(pool_db)
 
     def _ensure_pool_delete_conditions(self, context, pool_id):
-        if context.session.query(Vip).filter_by(pool_id=pool_id).first():
+        if context.session.query(Listener).filter_by(
+                default_pool_id=pool_id).first():
             raise loadbalancer.PoolInUse(pool_id=pool_id)
 
     def delete_pool(self, context, pool_id):
@@ -802,6 +803,8 @@ class LoadBalancerPluginDb(loadbalancer.LoadBalancerPluginBase,
         self._ensure_pool_delete_conditions(context, pool_id)
 
         with context.session.begin(subtransactions=True):
+            #TODO: remove once old API has been removed since pool stats will
+            #no longer exist
             self._delete_pool_stats(context, pool_id)
             pool_db = self._get_resource(context, Pool, pool_id)
             context.session.delete(pool_db)

@@ -213,18 +213,18 @@ class LoadBalancerPlugin(ldb.LoadBalancerPluginDb,
         driver.update_vip(context, old_vip, v)
         return v
 
-    def _delete_db_load_balancer(self, context, id):
+    def _delete_db_load_balancer_and_listener(self, context, id):
         # proxy the call until plugin inherits from DBPlugin
         load_balancer = self.get_load_balancer(context, id)
         super(LoadBalancerPlugin, self).delete_load_balancer(context, id)
         self._core_plugin.delete_port(context, load_balancer['vip_port_id'])
 
     def delete_vip(self, context, id):
-        self.update_status(context, ldb.Vip,
+        self.update_status(context, ldb.LoadBalancer,
                            id, constants.PENDING_DELETE)
-        v = self.get_vip(context, id)
-        driver = self._get_driver_for_pool(context, v['pool_id'])
-        driver.delete_vip(context, v)
+        lb_dict = self.get_load_balancer(context, id)
+        driver = self._get_driver_for_load_balancer(context, id)
+        driver.delete_load_balancer(context, lb_dict)
 
     def _get_provider_name(self, context, entity):
         if ('provider' in entity and
@@ -272,7 +272,7 @@ class LoadBalancerPlugin(ldb.LoadBalancerPluginDb,
         driver.update_pool(context, old_pool, p)
         return p
 
-    def _delete_db_pool(self, context, id):
+    def delete_pool(self, context, id):
         # proxy the call until plugin inherits from DBPlugin
         # rely on uuid uniqueness:
         try:
@@ -280,6 +280,8 @@ class LoadBalancerPlugin(ldb.LoadBalancerPluginDb,
                 self.service_type_manager.del_resource_associations(
                     context, [id])
                 super(LoadBalancerPlugin, self).delete_pool(context, id)
+        except loadbalancer.PoolInUse as pool_in_use_exception:
+            raise pool_in_use_exception
         except Exception:
             # that should not happen
             # if it's still a case - something goes wrong
@@ -289,17 +291,6 @@ class LoadBalancerPlugin(ldb.LoadBalancerPluginDb,
             with excutils.save_and_reraise_exception():
                 self.update_status(context, ldb.Pool,
                                    id, constants.ERROR)
-
-    def delete_pool(self, context, id):
-        # check for delete conditions and update the status
-        # within a transaction to avoid a race
-        with context.session.begin(subtransactions=True):
-            self.update_status(context, ldb.Pool,
-                               id, constants.PENDING_DELETE)
-            self._ensure_pool_delete_conditions(context, id)
-        p = self.get_pool(context, id)
-        driver = self._get_driver_for_provider(p['provider'])
-        driver.delete_pool(context, p)
 
     def create_member(self, context, member):
         member_db = super(LoadBalancerPlugin, self).create_member(context,
