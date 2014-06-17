@@ -97,10 +97,6 @@ class Vip(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant,
 class LoadBalancerListenerAssociation(model_base.BASEV2):
     """Many-to-Many association between LoadBalancer and Listener."""
 
-    @declarative.declared_attr
-    def __tablename__(cls):
-        return 'load_balancer_listener_assocations'
-
     loadbalancer_id = sa.Column(sa.String(36),
                                 sa.ForeignKey("loadbalancers.id"),
                                 primary_key=True)
@@ -205,10 +201,11 @@ class NodePool(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant,
     name = sa.Column(sa.String(255))
     description = sa.Column(sa.String(255))
     subnet_id = sa.Column(sa.String(36), nullable=False)
-    protocol = sa.Column(sa.Enum("HTTP", "HTTPS", "TCP", name="lb_protocols"),
-                         nullable=False)
-    lb_method = sa.Column(sa.String(64),
-                          nullable=False)
+    protocol = sa.Column(sa.String(36))
+    health_check_id = sa.Column(sa.String(36),
+                                sa.ForeignKey("healthchecks.id"),
+                                nullable=True)
+    lb_method = sa.Column(sa.String(64), nullable=False)
     admin_state_up = sa.Column(sa.Boolean(), nullable=False)
     # stats = orm.relationship(NodePoolStatistics,
     #                          uselist=False,
@@ -216,8 +213,7 @@ class NodePool(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant,
     #                          cascade="all, delete-orphan")
     nodes = orm.relationship(Node, backref="nodepools",
                              cascade="all, delete-orphan")
-    healthchecks = orm.relationship("HealthCheck", backref="nodepools",
-                                    cascade="all, delete-orphan")
+    healthcheck = orm.relationship("HealthCheck", backref="nodepools")
 
     # provider = orm.relationship(
     #     st_db.ProviderResourceAssociation,
@@ -442,7 +438,6 @@ class LoadBalancerPluginDb(loadbalancer.LoadBalancerPluginBase,
 
         with context.session.being(subtransactions=True):
             pass
-
 
     def create_vip(self, context, vip):
         v = vip['vip']

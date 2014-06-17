@@ -118,16 +118,19 @@ def upgrade(active_plugins=None, options=None):
                    ])
 
     op.create_table(
-        u'loadbalancers',
+        u'healthchecks',
         sa.Column(u'tenant_id', sa.String(255), nullable=True),
         sa.Column(u'id', sa.String(36), nullable=False),
-        sa.Column(u'name', sa.String(255), nullable=True),
-        sa.Column(u'description', sa.String(255), nullable=True),
-        sa.Column(u'vip_port_id', sa.String(36), nullable=True),
-        sa.Column(u'connection_limit', sa.Integer(11), nullable=True),
-        sa.Column(u'status', sa.String(16), nullable=False),
+        sa.Column(u'type', sa.String(64), nullable=False),
+        sa.Column(u'delay', sa.Integer(11), nullable=False),
+        sa.Column(u'timeout', sa.Integer(11), nullable=False),
+        sa.Column(u'max_retries', sa.Integer(11), nullable=False),
+        sa.Column(u'http_method', sa.String(16), nullable=True),
+        sa.Column(u'url_path', sa.String(255), nullable=True),
+        sa.Column(u'expected_codes', sa.String(64), nullable=True),
         sa.Column(u'admin_state_up', sa.Boolean(), nullable=False),
-        sa.PrimaryKeyConstraint(u'id')
+        sa.PrimaryKeyConstraint(u'id'),
+        sa.ForeignKeyConstraint([u'type'], [u'healthcheck_types.name'])
     )
 
     op.create_table(
@@ -139,11 +142,40 @@ def upgrade(active_plugins=None, options=None):
         sa.Column(u'subnet_id', sa.String(36), nullable=True),
         sa.Column(u'protocol', sa.Integer(11), nullable=True),
         sa.Column(u'lb_method', sa.String(16), nullable=False),
+        sa.Column(u'health_check_id', sa.String(36), nullable=True),
         sa.Column(u'status', sa.String(16), nullable=False),
         sa.Column(u'admin_state_up', sa.Boolean(), nullable=False),
         sa.PrimaryKeyConstraint(u'id'),
         sa.ForeignKeyConstraint([u'lb_method'],
-                                [u'loadbalancing_algorithms.name'])
+                                [u'loadbalancing_algorithms.name']),
+        sa.ForeignKeyConstraint([u'health_check_id'], [u'healthchecks.id'])
+    )
+
+    op.create_table(
+        u'nodes',
+        sa.Column(u'tenant_id', sa.String(255), nullable=True),
+        sa.Column(u'id', sa.String(36), nullable=False),
+        sa.Column(u'node_pool_id', sa.String(255), nullable=False),
+        sa.Column(u'address', sa.String(255), nullable=False),
+        sa.Column(u'protocol_port', sa.String(36), nullable=False),
+        sa.Column(u'weight', sa.Integer(11), nullable=True),
+        sa.Column(u'status', sa.String(16), nullable=False),
+        sa.Column(u'admin_state_up', sa.Boolean(), nullable=False),
+        sa.PrimaryKeyConstraint(u'id'),
+        sa.ForeignKeyConstraint([u'node_pool_id'], [u'nodepools.id'])
+    )
+
+    op.create_table(
+        u'loadbalancers',
+        sa.Column(u'tenant_id', sa.String(255), nullable=True),
+        sa.Column(u'id', sa.String(36), nullable=False),
+        sa.Column(u'name', sa.String(255), nullable=True),
+        sa.Column(u'description', sa.String(255), nullable=True),
+        sa.Column(u'vip_port_id', sa.String(36), nullable=True),
+        sa.Column(u'connection_limit', sa.Integer(11), nullable=True),
+        sa.Column(u'status', sa.String(16), nullable=False),
+        sa.Column(u'admin_state_up', sa.Boolean(), nullable=False),
+        sa.PrimaryKeyConstraint(u'id')
     )
 
     op.create_table(
@@ -171,46 +203,14 @@ def upgrade(active_plugins=None, options=None):
     )
 
     op.create_table(
-        u'nodes',
-        sa.Column(u'tenant_id', sa.String(255), nullable=True),
-        sa.Column(u'id', sa.String(36), nullable=False),
-        sa.Column(u'node_pool_id', sa.String(255), nullable=False),
-        sa.Column(u'address', sa.String(255), nullable=False),
-        sa.Column(u'protocol_port', sa.String(36), nullable=False),
-        sa.Column(u'weight', sa.Integer(11), nullable=True),
-        sa.Column(u'status', sa.String(16), nullable=False),
-        sa.Column(u'admin_state_up', sa.Boolean(), nullable=False),
-        sa.PrimaryKeyConstraint(u'id'),
-        sa.ForeignKeyConstraint([u'node_pool_id'], [u'nodepools.id'])
-    )
-
-    op.create_table(
-        u'healthchecks',
-        sa.Column(u'tenant_id', sa.String(255), nullable=True),
-        sa.Column(u'id', sa.String(36), nullable=False),
-        sa.Column(u'node_pool_id', sa.String(255), nullable=False),
-        sa.Column(u'type', sa.String(64), nullable=False),
-        sa.Column(u'delay', sa.Integer(11), nullable=False),
-        sa.Column(u'timeout', sa.Integer(11), nullable=False),
-        sa.Column(u'max_retries', sa.Integer(11), nullable=False),
-        sa.Column(u'http_method', sa.String(16), nullable=True),
-        sa.Column(u'url_path', sa.String(255), nullable=True),
-        sa.Column(u'expected_codes', sa.String(64), nullable=True),
-        sa.Column(u'admin_state_up', sa.Boolean(), nullable=False),
-        sa.PrimaryKeyConstraint(u'id'),
-        sa.ForeignKeyConstraint([u'node_pool_id'], [u'nodepools.id']),
-        sa.ForeignKeyConstraint([u'type'], [u'healthcheck_types.name'])
-    )
-
-    op.create_table(
-        u'nodepoolstatistics',
-        sa.Column(u'node_pool_id', sa.String(36), nullable=False),
+        u'loadbalancerstatistics',
+        sa.Column(u'load_balancer_id', sa.String(36), nullable=False),
         sa.Column(u'bytes_in', sa.Integer(), nullable=False),
         sa.Column(u'bytes_out', sa.Integer(), nullable=False),
         sa.Column(u'active_connections', sa.Integer(), nullable=False),
         sa.Column(u'total_connections', sa.Integer(), nullable=False),
-        sa.ForeignKeyConstraint([u'node_pool_id'], [u'nodepools.id'], ),
-        sa.PrimaryKeyConstraint(u'node_pool_id')
+        sa.ForeignKeyConstraint([u'load_balancer_id'], [u'loadbalancers.id']),
+        sa.PrimaryKeyConstraint(u'load_balancer_id')
     )
 
 
@@ -218,13 +218,13 @@ def downgrade(active_plugins=None, options=None):
     if not migration.should_run(active_plugins, migration_for_plugins):
         return
 
+    op.drop_table(u'loadbalancerstatistics')
     op.drop_table(u'loadbalancerlistenerassociations')
-    op.drop_table(u'loadbalancers')
-    op.drop_table(u'nodepoolstatistics')
-    op.drop_table(u'nodes')
-    op.drop_table(u'healthchecks')
     op.drop_table(u'listeners')
+    op.drop_table(u'loadbalancers')
+    op.drop_table(u'nodes')
     op.drop_table(u'nodepools')
+    op.drop_table(u'healthchecks')
+    op.drop_table(u'healthcheck_types')
     op.drop_table(u'loadbalancing_protocols')
     op.drop_table(u'loadbalancing_algorithms')
-    op.drop_table(u'healthcheck_types')
