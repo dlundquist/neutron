@@ -417,12 +417,6 @@ class AgentDriverBase(abstract_driver.LoadBalancerAbstractDriver):
             fanout=False)
         self.plugin.conn.consume_in_thread()
 
-    def get_pool_agent(self, context, pool_id):
-        agent = self.plugin.get_lbaas_agent_hosting_pool(context, pool_id)
-        if not agent:
-            raise lbaas_agentscheduler.NoActiveLbaasAgent(pool_id=pool_id)
-        return agent['agent']
-
     def get_load_balancer_agent(self, context, load_balancer_id):
         agent = self.plugin.get_lbaas_agent_hosting_load_balancer(
             context, load_balancer_id)
@@ -460,34 +454,37 @@ class AgentDriverBase(abstract_driver.LoadBalancerAbstractDriver):
         self.agent_rpc.delete_load_balancer(context,
                                             load_balancer, agent['host'])
 
-    def delete_listener(self, context, load_balancer_id, listener):
-        agent = self.get_load_balancer_agent(context, load_balancer_id)
+    def create_listener(self, context, listener):
+        if (not hasattr(listener, 'load_balancer_id') or
+                listener.load_balancer_id):
+            #listener is not on a load balancer so it does not have an agent
+            return
+        agent = self.get_load_balancer_agent(context,
+                                             listener.load_balancer_id)
         self.agent_rpc.delete_listener(context, listener, agent['host'])
 
-    def update_listener(self, context, load_balancer_id, old_listener,
-                        listener):
-        agent = self.get_load_balancer_agent(context, load_balancer_id)
-        self.agent_rpc.update_listener(context, load_balancer_id,
+    def delete_listener(self, context, listener):
+        if (not hasattr(listener, 'load_balancer_id') or
+                listener.load_balancer_id):
+            #listener is not on a load balancer so it does not have an agent
+            return
+        agent = self.get_load_balancer_agent(context,
+                                             listener.load_balancer_id)
+        self.agent_rpc.delete_listener(context, listener, agent['host'])
+
+    def update_listener(self, context, old_listener, listener):
+        #TODO: check for load_balancer_id and handle old_listener and listener
+        agent = self.get_load_balancer_agent(context,
+                                             old_listener.load_balancer_id)
+        self.agent_rpc.update_listener(context, old_listener.load_balancer_id,
                                        old_listener, listener, agent['host'])
 
-    # def create_pool(self, context, pool):
-    #     if 'loadbalancer_ids' in pool and len(pool['loadbalancer_ids']) > 0:
-    #         for lb_id in pool['loadbalancer_ids']:
-    #             agent = self.get_load_balancer_agent(context, lb_id)
-    #             if not agent:
-    #                 raise lbaas_agentscheduler.\
-    #                     NoEligibleLbaasLoadBalancerAgent(lb_id=lb_id)
-    #             self.agent_rpc.create_pool(context, pool, agent['host'],
-    #                                        self.device_driver)
-    #     #TODO: remove entire else block when old API is removed
-    #     else:
-    #         agent = self.pool_scheduler.schedule(self.plugin, context, pool,
-    #                                              self.device_driver)
-    #         if not agent:
-    #             raise lbaas_agentscheduler.NoEligibleLbaasAgent(
-    #                 pool_id=pool['id'])
-    #         self.agent_rpc.create_pool(context, pool, agent['host'],
-    #                                    self.device_driver)
+    def create_pool(self, context, pool):
+        if 'loadbalancer_ids' in pool and len(pool['loadbalancer_ids']) > 0:
+            for lb_id in pool['loadbalancer_ids']:
+                agent = self.get_load_balancer_agent(context, lb_id)
+                self.agent_rpc.create_pool(context, pool, agent['host'],
+                                           self.device_driver)
 
     def update_pool(self, context, load_balancer_id, old_pool, pool):
         agent = self.get_load_balancer_agent(context, load_balancer_id)

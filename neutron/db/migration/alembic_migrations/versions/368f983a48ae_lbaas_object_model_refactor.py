@@ -73,6 +73,7 @@ def upgrade(active_plugins=None, options=None):
         sa.Column(u'description', sa.String(255), nullable=True),
         sa.Column(u'vip_port_id', sa.String(36), nullable=True),
         sa.Column(u'vip_subnet_id', sa.String(36), nullable=False),
+        sa.Column(u'vip_address', sa.String(36), nullable=False),
         sa.Column(u'connection_limit', sa.Integer(11), nullable=True),
         sa.Column(u'status', sa.String(16), nullable=False),
         sa.Column(u'admin_state_up', sa.Boolean(), nullable=False),
@@ -85,35 +86,29 @@ def upgrade(active_plugins=None, options=None):
         sa.Column(u'id', sa.String(36), nullable=False),
         sa.Column(u'protocol', sa.String(36), nullable=True),
         sa.Column(u'protocol_port', sa.Integer(11), nullable=True),
+        sa.Column(u'loadbalancer_id', sa.String(36), nullable=True),
         sa.Column(u'default_pool_id', sa.String(36), nullable=False),
         sa.Column(u'admin_state_up', sa.Boolean(), nullable=False),
-        sa.ForeignKeyConstraint(['protocol'],
-                                ['loadbalancing_protocols.name']),
-        sa.ForeignKeyConstraint(['default_pool_id'],
-                                ['pools.id']),
+        sa.ForeignKeyConstraint([u'protocol'],
+                                [u'loadbalancing_protocols.name']),
+        sa.ForeignKeyConstraint([u'loadbalancer_id'],
+                                [u'loadbalancers.id']),
+        sa.ForeignKeyConstraint([u'default_pool_id'],
+                                [u'pools.id']),
         sa.PrimaryKeyConstraint(u'id')
     )
 
     op.create_table(
-        u'loadbalancerlistenerassociations',
-        sa.Column(u'load_balancer_id', sa.String(255), nullable=False),
-        sa.Column(u'listener_id', sa.String(255), nullable=False),
-        sa.ForeignKeyConstraint(['load_balancer_id'], ['loadbalancers.id']),
-        sa.ForeignKeyConstraint(['listener_id'], ['listeners.id']),
-        sa.PrimaryKeyConstraint(u'load_balancer_id', u'listener_id')
-    )
-
-    op.create_table(
         u'loadbalanceragentbindings',
-        sa.Column('load_balancer_id', sa.String(36), nullable=False),
-        sa.Column('agent_id', sa.String(36), nullable=False),
-        sa.ForeignKeyConstraint(['agent_id'],
-                                ['agents.id'],
+        sa.Column(u'load_balancer_id', sa.String(36), nullable=False),
+        sa.Column(u'agent_id', sa.String(36), nullable=False),
+        sa.ForeignKeyConstraint([u'agent_id'],
+                                [u'agents.id'],
                                 ondelete='CASCADE'),
-        sa.ForeignKeyConstraint(['load_balancer_id'],
-                                ['loadbalancers.id'],
+        sa.ForeignKeyConstraint([u'load_balancer_id'],
+                                [u'loadbalancers.id'],
                                 ondelete='CASCADE'),
-        sa.PrimaryKeyConstraint('load_balancer_id')
+        sa.PrimaryKeyConstraint(u'load_balancer_id')
     )
 
     op.create_table(
@@ -135,7 +130,6 @@ def downgrade(active_plugins=None, options=None):
 
     op.drop_table(u'loadbalancerstatistics')
     op.drop_table(u'loadbalanceragentbindings')
-    op.drop_table(u'loadbalancerlistenerassociations')
     op.drop_table(u'listeners')
     op.drop_table(u'loadbalancers')
     op.drop_table(u'loadbalancing_protocols')

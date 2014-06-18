@@ -255,7 +255,7 @@ class LbaasAgentManager(periodic_task.PeriodicTasks):
         driver = self._get_driver(load_balancer['id'])
         driver.delete_load_balancer(load_balancer)
 
-    def create_listener(self, context, load_balancer_id, listener):
+    def create_listener(self, context, listener):
         driver = self._get_driver(listener['id'])
         try:
             driver.create_listener(listener)
@@ -269,7 +269,7 @@ class LbaasAgentManager(periodic_task.PeriodicTasks):
                                           listener['id'],
                                           constants.ACTIVE)
 
-    def update_listener(self, context, load_balancer_id, old_listener, listener):
+    def update_listener(self, context, old_listener, listener):
         driver = self._get_driver(listener['id'])
         try:
             driver.update_listener(old_listener, listener)
@@ -283,7 +283,7 @@ class LbaasAgentManager(periodic_task.PeriodicTasks):
                                           listener['id'],
                                           constants.ACTIVE)
 
-    def delete_listener(self, context, load_balancer_id, listener):
+    def delete_listener(self, context, listener):
         driver = self._get_driver(listener['id'])
         driver.delete_load_balancer(listener)
 

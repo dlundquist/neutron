@@ -129,9 +129,6 @@ class LoadBalancer(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
     connection_limit = sa.Column(sa.Integer)
     status = sa.Column(sa.String(16))
     admin_state_up = sa.Column(sa.Boolean(), nullable=False)
-    listeners = orm.relationship("Listener",
-                                 secondary="loadbalancerlistenerassociations",
-                                 backref="loadbalancers")
     vip_port = orm.relationship(models_v2.Port)
     provider = orm.relationship(
         st_db.ProviderResourceAssociation,
@@ -149,10 +146,13 @@ class LoadBalancer(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
 class Listener(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
     """Represents a v2 neutron listener."""
     default_pool_id = sa.Column(sa.String(36), sa.ForeignKey("pools.id"))
+    load_balancer_id = sa.Column(sa.String(36), sa.ForeignKey(
+        "loadbalancers.id"))
     protocol = sa.Column(sa.String(36))
     protocol_port = sa.Column(sa.Integer)
     admin_state_up = sa.Column(sa.Boolean(), nullable=False)
     default_pool = orm.relationship("Pool", backref="listener")
+    load_balancer = orm.relationship("LoadBalancer", backref="listener")
 
 
 class LoadBalancerListenerAssociation(model_base.BASEV2):
@@ -369,6 +369,7 @@ class LoadBalancerPluginDb(loadbalancer.LoadBalancerPluginBase,
     def _make_listener_dict(self, listener, fields=None):
 
         res = {'id': listener.id,
+               'load_balancer_id': listener.load_balancer_id,
                'tenant_id': listener.tenant_id,
                'protocol': listener.protocol,
                'protocol_port': listener.protocol_port,
@@ -444,6 +445,7 @@ class LoadBalancerPluginDb(loadbalancer.LoadBalancerPluginBase,
                                  status=constants.PENDING_CREATE)
 
             listener_db = Listener(id=uuidutils.generate_uuid(),
+                                   load_balancer_id=lb_id,
                                    tenant_id=tenant_id,
                                    protocol=listener['protocol'],
                                    protocol_port=listener['protocol_port'],
