@@ -14,7 +14,8 @@
 #
 # @author: Mark McClain, DreamHost
 
-import itertools
+import jinja2
+import os
 from six import moves
 
 from neutron.agent.linux import utils
@@ -47,110 +48,77 @@ STATS_MAP = {
     constants.STATS_RESPONSE_ERRORS: 'eresp'
 }
 
-ACTIVE_PENDING_STATUSES = qconstants.ACTIVE_PENDING_STATUSES
-INACTIVE = qconstants.INACTIVE
+ACTIVE_PENDING_STATUSES = qconstants.ACTIVE_PENDING_STATUSES + (qconstants.INACTIVE,)
+
+TEMPLATE_PATH = os.path.dirname(__file__)
+JINJA_ENV = None
 
 
 def save_config(conf_path, logical_config, socket_path=None,
                 user_group='nogroup'):
     """Convert a logical configuration to the HAProxy version."""
-    data = []
-    data.extend(_build_global(logical_config, socket_path=socket_path,
-                              user_group=user_group))
-    data.extend(_build_defaults(logical_config))
-    data.extend(_build_frontend(logical_config))
-    data.extend(_build_backend(logical_config))
-    utils.replace_file(conf_path, '\n'.join(data))
+    template_file = os.path.join(TEMPLATE_PATH,
+                                 'templates/haproxy_v1.4.template')
+    template = _get_template(template_file)
+
+    listeners = [_transform_listener(x) for x in logical_config.listeners]
+    pools = [_transform_pool(x) for x in logical_config.pools]
+
+    config_str = template.render(
+        {'user_group': socket_path,
+         'stats_sock': user_group,
+         'vip_address': _get_first_ip_from_port(logical_config.port),
+         'listeners': listeners,
+         'pools': pools
+         })
+
+    utils.replace_file(conf_path, config_str)
 
 
-def _build_global(config, socket_path=None, user_group='nogroup'):
-    opts = [
-        'daemon',
-        'user nobody',
-        'group %s' % user_group,
-        'log /dev/log local0',
-        'log /dev/log local1 notice'
-    ]
-
-    if socket_path:
-        opts.append('stats socket %s mode 0666 level user' % socket_path)
-
-    return itertools.chain(['global'], ('\t' + o for o in opts))
+def _get_template(template_file):
+    global JINJA_ENV
+    if not JINJA_ENV:
+        templateLoader = jinja2.FileSystemLoader(searchpath="/")
+        JINJA_ENV = jinja2.Environment(loader=templateLoader)
+    return JINJA_ENV.get_template(template_file)
 
 
-def _build_defaults(config):
-    opts = [
-        'log global',
-        'retries 3',
-        'option redispatch',
-        'timeout connect 5000',
-        'timeout client 50000',
-        'timeout server 50000',
-    ]
-
-    return itertools.chain(['defaults'], ('\t' + o for o in opts))
+def _transform_listener(listener):
+    return {
+        'id': listener.id,
+        'protocol_port': listener.protocol_port,
+        'protocol': PROTOCOL_MAP[listener.protocol],
+        'default_pool_id': listener.default_pool.id,
+        'connection_limit': listener.connection_limit,
+        'x_forward_for': listener.protocol == constants.PROTOCOL_HTTP
+    }
 
 
-def _build_frontend(config):
-    protocol = config['vip']['protocol']
+def _transform_pool(pool):
+    members = [_transform_member(x) for x in pool.members if _include_member(x)]
 
-    opts = [
-        'option tcplog',
-        'bind %s:%d' % (
-            _get_first_ip_from_port(config['vip']['port']),
-            config['vip']['protocol_port']
-        ),
-        'mode %s' % PROTOCOL_MAP[protocol],
-        'default_backend %s' % config['pool']['id'],
-    ]
-
-    if config['vip']['connection_limit'] >= 0:
-        opts.append('maxconn %s' % config['vip']['connection_limit'])
-
-    if protocol == constants.PROTOCOL_HTTP:
-        opts.append('option forwardfor')
-
-    return itertools.chain(
-        ['frontend %s' % config['vip']['id']],
-        ('\t' + o for o in opts)
-    )
-
-
-def _build_backend(config):
-    protocol = config['pool']['protocol']
-    lb_method = config['pool']['lb_method']
-
-    opts = [
-        'mode %s' % PROTOCOL_MAP[protocol],
-        'balance %s' % BALANCE_MAP.get(lb_method, 'roundrobin')
-    ]
-
-    if protocol == constants.PROTOCOL_HTTP:
-        opts.append('option forwardfor')
-
-    # add the first health_monitor (if available)
     server_addon, health_opts = _get_server_health_option(config)
-    opts.extend(health_opts)
+    # TODO health monitor
 
-    # add session persistence (if available)
-    persist_opts = _get_session_persistence(config)
-    opts.extend(persist_opts)
+    return {
+        'mode': PROTOCOL_MAP[pool.protocol],
+        'balance_algorithm': BALANCE_MAP.get(pool.lb_method, 'roundrobin'),
+        'members': members
+    }
 
-    # add the members
-    for member in config['members']:
-        if ((member['status'] in ACTIVE_PENDING_STATUSES or
-             member['status'] == INACTIVE)
-            and member['admin_state_up']):
-            server = (('server %(id)s %(address)s:%(protocol_port)s '
-                       'weight %(weight)s') % member) + server_addon
-            if _has_http_cookie_persistence(config):
-                server += ' cookie %d' % config['members'].index(member)
-            opts.append(server)
 
-    return itertools.chain(
-        ['backend %s' % config['pool']['id']],
-        ('\t' + o for o in opts)
-    )
+def _transform_member(member):
+    return {
+        'id': member.id,
+        'address': member.address,
+        'protocol_port': member.protocol_port,
+        'cookie': 0, # TODO
+        'weight': member.weight
+    }
+
+def _include_member(member):
+    return member.status in ACTIVE_PENDING_STATUSES and
+           member.admin_status_up
 
 
 def _get_first_ip_from_port(port):

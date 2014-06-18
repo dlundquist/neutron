@@ -1,0 +1,39 @@
+# Configuration for {{loadbalancer.name}}
+global
+    daemon
+    user nobody
+    group {{ user_group }}
+    log /dev/log local0
+    log /dev/log local1 notice
+    stats socket {{ stats_sock }} mode 0666 level user
+
+defaults
+    log global
+    retries 3
+    option redispatch
+    timeout connect 5000
+    timeout client 50000
+    timeout server 50000
+
+{% for listener in listeners -%}
+frontend {{ listener.id }}
+    option tcplog
+    bind {{ loadbalancer.vip_address }}:{{ listener.protocol_port }}
+    mode {{ listener.protocol }}
+    default_backend {{ listener.default_pool_id }}
+{% if listener.connection_limit >= 0 -%}
+    maxconn {{ listener.connection_limit }}
+{% endif -%}
+{% if listener.x_forward_for -%}
+    option forwardfor
+{$ endif -%}
+{% endfor -%}
+
+{% for pool in pools -%}
+backend {{ pool.id }}
+    mode {{ pool.mode }}
+    balance {{ pool.balance_algorithm }}
+{% for member in pool.members -%}
+    server {{ member.id }} {{ member.address }}:{{ member.protocol_port }} weight {{ member.weight }}
+{% endfor -%}
+{% endfor -%}
