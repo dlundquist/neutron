@@ -18,65 +18,14 @@
 import abc
 import six
 
-from neutron.plugins.common import constants
-
-
-class NotImplementedManager(object):
-
-    def create(self, context, obj):
-        raise NotImplementedError()
-
-    def update(self, context, old_obj, obj):
-        raise NotImplementedError()
-
-    def delete(self, context, obj):
-        raise NotImplementedError()
-
-    def stats(self, context, obj):
-        pass  # Optional
-
-
-class LBAbstractDriver(object):
-
-    load_balancer = NotImplementedManager()
-    listener = NotImplementedManager()
-    pool = NotImplementedManager()
-    member = NotImplementedManager()
-    health_monitor = NotImplementedManager()
-
-
-@six.add_metaclass(abc.ABCMeta)
-class LBBaseManager(object):
-
-    def __init__(self, driver):
-        self.driver = driver
-
-    @abc.abstractmethod
-    def create(self, context, obj):
-        pass
-
-    @abc.abstractmethod
-    def update(self, context, obj_old, obj):
-        pass
-
-    @abc.abstractmethod
-    def delete(self, context, obj):
-        pass
-
-    # Status update helpers
-
-    def active(self, context, model, model_id):
-        self.driver.plugin.update_status(context, model, model_id,
-                                         constants.ACTIVE)
-
-    def failed(self, context, model, model_id):
-        self.driver.plugin.update_status(context, model, model_id,
-                                         constants.ERROR)
-
-
 #
-# DEPRECATED BELOW THIS COMMENT - Abstract driver for old lbaas API.
+# DEPRECATION WARNING.  THIS ABSTRACT DRIVER IS FOR THE LBAAS V1 OBJECT
+# MODEL AND SHOULD NO LONGER BE USED TO CREATE DRIVERS.
 #
+# PLEASE REFER TO driver_base.py and driver_mixins.py for the newest
+# lbaas driver base classes.
+#
+
 
 @six.add_metaclass(abc.ABCMeta)
 class LoadBalancerAbstractDriver(object):
