@@ -1,3 +1,4 @@
+# Configuration for {{loadbalancer.name}}
 global
     daemon
     user nobody
@@ -17,24 +18,21 @@ defaults
 {% for listener in listeners -%}
 frontend {{ listener.id }}
     option tcplog
-    bind {{ vip_address }}:{{ listener.protocol_port }}
+    bind {{ loadbalancer.vip_address }}:{{ listener.protocol_port }}
     mode {{ listener.protocol }}
-    default_backend {{ listener.default_pool.id }}
+    default_backend {{ listener.default_pool_id }}
 {% if listener.connection_limit >= 0 -%}
     maxconn {{ listener.connection_limit }}
 {% endif -%}
-{% if listener.protocol == 'HTTP' -%}
+{% if listener.x_forward_for -%}
     option forwardfor
 {$ endif -%}
 {% endfor -%}
 
 {% for pool in pools -%}
 backend {{ pool.id }}
-    mode {{ 'http' }}
-    balance {{ 'roundrobin' }}
-{% if listener.protocol == 'HTTP' -%}
-    option forwardfor
-{% endif -%}
+    mode {{ pool.mode }}
+    balance {{ pool.balance_algorithm }}
 {% for member in pool.members -%}
     server {{ member.id }} {{ member.address }}:{{ member.protocol_port }} weight {{ member.weight }}
 {% endfor -%}
