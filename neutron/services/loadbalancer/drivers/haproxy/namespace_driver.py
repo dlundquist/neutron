@@ -104,9 +104,10 @@ class HaproxyNSDriver(agent_device_driver.AgentDeviceDriver):
     def _spawn(self, logical_config, extra_cmd_args=()):
         pool_id = logical_config['pool']['id']
         namespace = get_ns_name(pool_id)
-        conf_path = self._get_state_file_path(pool_id, 'conf')
-        pid_path = self._get_state_file_path(pool_id, 'pid')
-        sock_path = self._get_state_file_path(pool_id, 'sock')
+        conf_path = self._get_state_file_path(pool_id, 'haproxy.conf')
+        pid_path = self._get_state_file_path(pool_id, 'run/haproxy.pid')
+        sock_path = self._get_state_file_path(pool_id, 'run/haproxy_stats.sock')
+        #haproxy_binary = self.conf.haproxy.haproxy_binary or 'haproxy'
         user_group = self.conf.haproxy.user_group
 
         hacfg.save_config(conf_path, logical_config, sock_path, user_group)

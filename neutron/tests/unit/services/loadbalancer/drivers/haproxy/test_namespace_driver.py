@@ -90,9 +90,10 @@ class TestHaproxyNSDriver(base.BaseTestCase):
 
             self.driver._spawn(self.fake_config)
 
-            mock_save.assert_called_once_with('conf', self.fake_config,
-                                              'sock', 'test_group')
-            cmd = ['haproxy', '-f', 'conf', '-p', 'pid']
+            #TODO: update sample config...
+            mock_save.assert_called_once_with('haproxy.conf', self.fake_config,
+                                              'run/haproxy_stats.sock', 'test_group')
+            cmd = ['haproxy', '-f', 'haproxy.conf', '-p', 'run/haproxy.pid']
             ip_wrap.assert_has_calls([
                 mock.call('sudo_test', 'qlbaas-pool_id'),
                 mock.call().netns.execute(cmd)

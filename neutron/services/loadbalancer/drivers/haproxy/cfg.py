@@ -62,19 +62,20 @@ def save_config(conf_path, logical_config, socket_path=None,
     template_file = os.path.join(TEMPLATE_PATH,
                                  'templates/haproxy_v1.4.template')
     template = _get_template(template_file)
+    loadbalancer = [_transform_loadbalancer(logical_config,
+                                            user_group='nogroup',
+                                            socket_path=socket_path)]
 
-    listeners = [_transform_listener(x) for x in logical_config.listeners]
-    pools = [_transform_pool(x) for x in logical_config.pools]
-
-    config_str = template.render(
-        {'user_group': socket_path,
-         'stats_sock': user_group,
-         'vip_address': _get_first_ip_from_port(logical_config.port),
-         'listeners': listeners,
-         'pools': pools
-         })
+    config_str = _render_template(template,
+                                  {'loadbalancer': loadbalancer,
+                                   'user_group': user_group,
+                                   'stats_sock': socket_path})
 
     utils.replace_file(conf_path, config_str)
+
+
+def _render_template(template, obj_to_render):
+    return template.render(obj_to_render)
 
 
 def _get_template(template_file):
@@ -85,47 +86,84 @@ def _get_template(template_file):
     return JINJA_ENV.get_template(template_file)
 
 
-def _transform_listener(listener):
+def _transform_loadbalancer(logical_config):
+    listeners = [_transform_listener(x) for x in logical_config.listeners]
     return {
+        'name': logical_config.name,
+        'vip_address': _get_first_ip_from_port(logical_config.vip_port),
+        'listeners': listeners
+    }
+
+def _transform_listener(listener):
+    pools = [_transform_pool(x) for x in listener.pools]
+    return '' if listener is None else {
         'id': listener.id,
         'protocol_port': listener.protocol_port,
         'protocol': PROTOCOL_MAP[listener.protocol],
-        'default_pool_id': listener.default_pool.id,
+        'default_pool': _transform_pool(listener.default_pool),
         'connection_limit': listener.connection_limit,
-        'x_forward_for': listener.protocol == constants.PROTOCOL_HTTP
+        'x_forward_for': listener.protocol == constants.PROTOCOL_HTTP,
+        'pools': pools
     }
 
 
 def _transform_pool(pool):
     members = [_transform_member(x) for x in pool.members if _include_member(x)]
+    health_monitor = _transform_health_monitor(pool.health_monitor)
+    session_persistence = _transform_session_persistence(pool.session_persistence)
+    return '' if pool is None else {
+        'id': pool.id,
+        'protocol': PROTOCOL_MAP[pool.protocol],
+        'lb_algorithm': BALANCE_MAP.get(pool.lb_algorithm, 'roundrobin'),
+        'members': members,
+        'health_monitor': health_monitor,
+        'session_persistence': session_persistence,
+        'admin_state_up': pool.admin_state_up,
+        'status': pool.status
+    }
 
-    server_addon, health_opts = _get_server_health_option(config)
-    # TODO health monitor
 
-    return {
-        'mode': PROTOCOL_MAP[pool.protocol],
-        'balance_algorithm': BALANCE_MAP.get(pool.lb_method, 'roundrobin'),
-        'members': members
+def _transform_session_persistence(persistence):
+    return '' if persistence is None else {
+        'type': persistence.type,
+        'cookie_name': persistence.cookie_name
     }
 
 
 def _transform_member(member):
-    return {
+    return '' if member is None else {
         'id': member.id,
         'address': member.address,
         'protocol_port': member.protocol_port,
-        'cookie': 0, # TODO
-        'weight': member.weight
+        'weight': member.weight,
+        'admin_state_up': member.admin_state_up,
+        'subnet_id': member.subnet_id,
+        'status': member.status
     }
 
+
+def _transform_health_monitor(monitor):
+    return '' if monitor is None else {
+        'id': monitor.id,
+        'type': monitor.type,
+        'delay': monitor.delay,
+        'timeout': monitor.timeout,
+        'max_retries': monitor.max_retries,
+        'http_method': monitor.http_method,
+        'url_path': monitor.url_path,
+        'expected_codes': monitor.expected_codes,
+        'admin_state_up': monitor.admin_state_up,
+    }
+
+
 def _include_member(member):
-    return member.status in ACTIVE_PENDING_STATUSES and
-           member.admin_status_up
+    return member.status in ACTIVE_PENDING_STATUSES \
+        and member.admin_state_up
 
 
 def _get_first_ip_from_port(port):
-    for fixed_ip in port['fixed_ips']:
-        return fixed_ip['ip_address']
+    for fixed_ip in port.fixed_ips:
+        return fixed_ip.ip_address
 
 
 def _get_server_health_option(config):

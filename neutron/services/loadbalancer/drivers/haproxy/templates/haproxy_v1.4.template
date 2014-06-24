@@ -33,7 +33,22 @@ frontend {{ listener.id }}
 backend {{ pool.id }}
     mode {{ pool.mode }}
     balance {{ pool.balance_algorithm }}
+{% if pool.session_persistence -%}
+{% if pool.session_persistence.type is 'SOURCE_IP' -%}
+    stick-table type ip size 10k
+    stick on src
+{% endif -%}
+{% if pool.session_persistence.type is 'HTTP_COOKIE' -%}
+    cookie SRV insert indirect nocache
+{% endif -%}
+{% if pool.session_persistence.type is 'APP_COOKIE' and pool.session_persistence.cookie_name -%}
+    appsession {{ pool.session_persistence.cookie_name }} len 56 timeout 3h
+{% endif -%}
+{% endif %}
+{% if pool.health_monitor -%}
+    timeout check {{ pool.health_monitor.timeout }}
+{% endif -%}
 {% for member in pool.members -%}
-    server {{ member.id }} {{ member.address }}:{{ member.protocol_port }} weight {{ member.weight }}
+    server {{ "%s %s %s:%d weight %s"|format(member.id, member.address, member.protocol_port, member.weight) }} {%if pool.session_persistence.type is 'HTTP_COOKIE' -%}{{ member.id }}{% endif -%}
 {% endfor -%}
 {% endfor -%}

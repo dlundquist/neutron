@@ -1,0 +1,52 @@
+# Configuration for {{loadbalancer.name}}
+global
+    daemon
+    user nobody
+    group {{ user_group }}
+    log /dev/log local0
+    log /dev/log local1 notice
+    stats socket {{ stats_sock }} mode 0666 level user
+
+defaults
+    log global
+    retries 3
+    option redispatch
+    timeout connect 5000
+    timeout client 50000
+    timeout server 50000
+
+{% for listener in loadbalancer.listeners -%}
+frontend {{ listener.id }}
+    option tcplog
+    {% if listener.connection_limit >= 0 -%}
+    maxconn {{ listener.connection_limit }}
+    {% endif -%}
+    {% if listener.x_forward_for -%}
+    option forwardfor
+    {% endif -%}
+    bind {{ loadbalancer.vip_address }}:{{ listener.protocol_port }}
+    mode {{ listener.protocol }}
+    default_backend {{ listener.default_pool.id }}
+
+{% for pool in listener.pools -%}
+backend {{ pool.id }}
+    mode {{ pool.protocol }}
+    balance {{ pool.lb_algorithm }}
+    {% if pool.session_persistence and pool.session_persistence.type == 'SOURCE_IP' -%}
+    stick-table type ip size 10k
+    stick on src
+    {% endif -%}
+    {% if pool.session_persistence.type == 'HTTP_COOKIE' -%}
+    cookie SRV insert indirect nocache
+    {% endif -%}
+    {% if pool.session_persistence.type == 'APP_COOKIE' and pool.session_persistence.cookie_name -%}
+    appsession {{ pool.session_persistence.cookie_name }} len 56 timeout 3h
+    {% endif -%}
+    {% if pool.health_monitor -%}
+    timeout check {{ pool.health_monitor.timeout }}
+    {% endif -%}
+    {% for member in pool.members -%}
+    server {{ "%s %s:%d weight %d"|format(member.id, member.address, member.protocol_port, member.weight) }} {%if pool.session_persistence.type == 'HTTP_COOKIE' -%}{{ member.id }}{% endif -%}
+    {% endfor -%}
+{% endfor -%}
+{% endfor -%}
