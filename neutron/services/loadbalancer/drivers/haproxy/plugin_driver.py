@@ -21,5 +21,6 @@ class HaproxyOnHostPluginDriver(agent_driver_base.AgentDriverBase):
     device_driver = namespace_driver.DRIVER_NAME
 
 
+# TODO(remove this -- AgentDriverBase can only use a single plugin)
 class HaproxyOnHostPluginDriverv2(agent_driver_base.AgentDriverBase):
     device_driver = namespace_driver.DRIVER_NAME

@@ -20,12 +20,13 @@ from neutron.common import rpc as n_rpc
 class LbaasAgentApi(n_rpc.RpcProxy):
     """Agent side of the Agent to Plugin RPC API."""
 
-    API_VERSION = '2.0'
+    API_VERSION = '3.0'
     # history
     #   1.0 Initial version
     #   2.0 Generic API for agent based drivers
     #       - get_logical_device() handling changed on plugin side;
     #       - pool_deployed() and update_status() methods added;
+    #   3.0 Update for LBaaS v2 object model
 
     def __init__(self, topic, context, host):
         super(LbaasAgentApi, self).__init__(topic, self.API_VERSION)
@@ -39,27 +40,19 @@ class LbaasAgentApi(n_rpc.RpcProxy):
             topic=self.topic
         )
 
-    def pool_destroyed(self, pool_id):
+    def load_balancer_deployed(self, load_balancer_id):
         return self.call(
             self.context,
-            self.make_msg('pool_destroyed', pool_id=pool_id),
+            self.make_msg('load_balancer_destroyed',
+                    load_balancer_id=load_balancer_id),
             topic=self.topic
         )
 
-    def pool_deployed(self, pool_id):
+    def load_balancer_destroyed(self, load_balancer_id):
         return self.call(
             self.context,
-            self.make_msg('pool_deployed', pool_id=pool_id),
-            topic=self.topic
-        )
-
-    def get_logical_device(self, pool_id):
-        return self.call(
-            self.context,
-            self.make_msg(
-                'get_logical_device',
-                pool_id=pool_id
-            ),
+            self.make_msg('load_balancer_deployed',
+                    load_balancer_id=load_balancer_id),
             topic=self.topic
         )
 
@@ -86,6 +79,7 @@ class LbaasAgentApi(n_rpc.RpcProxy):
         )
 
     def update_pool_stats(self, pool_id, stats):
+        # TODO(change to load_balancer stats?)
         return self.call(
             self.context,
             self.make_msg(

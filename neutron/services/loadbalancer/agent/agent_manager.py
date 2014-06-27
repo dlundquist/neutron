@@ -47,7 +47,7 @@ class DeviceNotFoundOnAgent(n_exc.NotFound):
 
 class LbaasAgentManager(n_rpc.RpcCallback, periodic_task.PeriodicTasks):
 
-    RPC_API_VERSION = '2.0'
+    RPC_API_VERSION = '3.0'
     # history
     #   1.0 Initial version
     #   1.1 Support agent_updated call
@@ -55,6 +55,7 @@ class LbaasAgentManager(n_rpc.RpcCallback, periodic_task.PeriodicTasks):
     #       - modify/reload/destroy_pool methods were removed;
     #       - added methods to handle create/update/delete for every lbaas
     #       object individually;
+    #   3.0 Generic API for v2 Object Model agent based drivers
 
     def __init__(self, conf):
         super(LbaasAgentManager, self).__init__()
