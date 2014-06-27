@@ -29,7 +29,7 @@ from neutron.extensions import portbindings
 from neutron.openstack.common import importutils
 from neutron.openstack.common import log as logging
 from neutron.plugins.common import constants
-from neutron.services.loadbalancer.drivers import abstract_driver
+from neutron.services.loadbalancer.drivers import driver_base
 
 LOG = logging.getLogger(__name__)
 
@@ -312,7 +312,7 @@ class LoadBalancerAgentApi(rpc_compat.RpcProxy):
                           host)
 
 
-class AgentDriverBase(abstract_driver.LoadBalancerAbstractDriver):
+class AgentDriverBase(driver_base.LoadBalancerBaseDriver):
 
     # name of device driver that should be used by the agent;
     # vendor specific plugin drivers must override it;
@@ -322,6 +322,11 @@ class AgentDriverBase(abstract_driver.LoadBalancerAbstractDriver):
         if not self.device_driver:
             raise DriverNotSpecified()
 
+        self.load_balancer = AgentLoadBalancerManager(self)
+        self.listener = AgentListenerManager(self)
+        self.pool = AgentPoolManager(self)
+        self.member = AgentMemberManager(self)
+        self.health_monitor = AgentHealthMonitorManager(self)
         self.agent_rpc = LoadBalancerAgentApi(topics.LOADBALANCER_AGENT)
 
         self.plugin = plugin
@@ -329,6 +334,7 @@ class AgentDriverBase(abstract_driver.LoadBalancerAbstractDriver):
         self.plugin.agent_notifiers.update(
             {q_const.AGENT_TYPE_LOADBALANCER: self.agent_rpc})
 
+        # TODO(dlundquist) load balancer scheduler
         self.pool_scheduler = importutils.import_object(
             cfg.CONF.loadbalancer_pool_scheduler_driver)
 
@@ -348,18 +354,18 @@ class AgentDriverBase(abstract_driver.LoadBalancerAbstractDriver):
             fanout=False)
         self.plugin.conn.consume_in_threads()
 
-    def get_pool_agent(self, context, pool_id):
-        agent = self.plugin.get_lbaas_agent_hosting_pool(context, pool_id)
+    def get_load_balancer_agent(self, context, load_balancer_id):
+        agent = self.plugin.get_lbaas_agent_hosting_pool(context, load_balancer_id)
         if not agent:
-            raise lbaas_agentscheduler.NoActiveLbaasAgent(pool_id=pool_id)
+            raise lbaas_agentscheduler.NoActiveLbaasAgent(load_balancer_id=load_balancer_id)
         return agent['agent']
 
     def create_vip(self, context, vip):
-        agent = self.get_pool_agent(context, vip['pool_id'])
+        agent = self.get_load_balancer_agent(context, vip['pool_id'])
         self.agent_rpc.create_vip(context, vip, agent['host'])
 
     def update_vip(self, context, old_vip, vip):
-        agent = self.get_pool_agent(context, vip['pool_id'])
+        agent = self.get_load_balancer_agent(context, vip['pool_id'])
         if vip['status'] in constants.ACTIVE_PENDING_STATUSES:
             self.agent_rpc.update_vip(context, old_vip, vip, agent['host'])
         else:
@@ -367,7 +373,7 @@ class AgentDriverBase(abstract_driver.LoadBalancerAbstractDriver):
 
     def delete_vip(self, context, vip):
         self.plugin._delete_db_vip(context, vip['id'])
-        agent = self.get_pool_agent(context, vip['pool_id'])
+        agent = self.get_load_balancer_agent(context, vip['pool_id'])
         self.agent_rpc.delete_vip(context, vip, agent['host'])
 
     def create_pool(self, context, pool):
@@ -379,7 +385,7 @@ class AgentDriverBase(abstract_driver.LoadBalancerAbstractDriver):
                                    self.device_driver)
 
     def update_pool(self, context, old_pool, pool):
-        agent = self.get_pool_agent(context, pool['id'])
+        agent = self.get_load_balancer_agent(context, pool['id'])
         if pool['status'] in constants.ACTIVE_PENDING_STATUSES:
             self.agent_rpc.update_pool(context, old_pool, pool,
                                        agent['host'])
@@ -395,11 +401,11 @@ class AgentDriverBase(abstract_driver.LoadBalancerAbstractDriver):
             self.agent_rpc.delete_pool(context, pool, agent['agent']['host'])
 
     def create_member(self, context, member):
-        agent = self.get_pool_agent(context, member['pool_id'])
+        agent = self.get_load_balancer_agent(context, member['pool_id'])
         self.agent_rpc.create_member(context, member, agent['host'])
 
     def update_member(self, context, old_member, member):
-        agent = self.get_pool_agent(context, member['pool_id'])
+        agent = self.get_load_balancer_agent(context, member['pool_id'])
         # member may change pool id
         if member['pool_id'] != old_member['pool_id']:
             old_pool_agent = self.plugin.get_lbaas_agent_hosting_pool(
@@ -414,18 +420,18 @@ class AgentDriverBase(abstract_driver.LoadBalancerAbstractDriver):
 
     def delete_member(self, context, member):
         self.plugin._delete_db_member(context, member['id'])
-        agent = self.get_pool_agent(context, member['pool_id'])
+        agent = self.get_load_balancer_agent(context, member['pool_id'])
         self.agent_rpc.delete_member(context, member, agent['host'])
 
     def create_pool_health_monitor(self, context, healthmon, pool_id):
         # healthmon is not used here
-        agent = self.get_pool_agent(context, pool_id)
+        agent = self.get_load_balancer_agent(context, pool_id)
         self.agent_rpc.create_pool_health_monitor(context, healthmon,
                                                   pool_id, agent['host'])
 
     def update_pool_health_monitor(self, context, old_health_monitor,
                                    health_monitor, pool_id):
-        agent = self.get_pool_agent(context, pool_id)
+        agent = self.get_load_balancer_agent(context, pool_id)
         self.agent_rpc.update_pool_health_monitor(context, old_health_monitor,
                                                   health_monitor, pool_id,
                                                   agent['host'])
@@ -435,9 +441,69 @@ class AgentDriverBase(abstract_driver.LoadBalancerAbstractDriver):
             context, health_monitor['id'], pool_id
         )
 
-        agent = self.get_pool_agent(context, pool_id)
+        agent = self.get_load_balancer_agent(context, pool_id)
         self.agent_rpc.delete_pool_health_monitor(context, health_monitor,
                                                   pool_id, agent['host'])
 
     def stats(self, context, pool_id):
         pass
+
+class AgentLoadBalancerManager(driver_base.BaseListenerManager):
+
+    def create(self, context, obj):
+        pass
+
+    def update(self, context, obj_old, obj):
+        pass
+
+    def delete(self, context, obj):
+        pass
+
+
+class AgentListenerManager(driver_base.BaseListenerManager):
+
+    def create(self, context, obj):
+        pass
+
+    def update(self, context, obj_old, obj):
+        pass
+
+    def delete(self, context, obj):
+        pass
+
+
+class AgentPoolManager(driver_base.BasePoolManager):
+
+    def create(self, context, obj):
+        pass
+
+    def update(self, context, obj_old, obj):
+        pass
+
+    def delete(self, context, obj):
+        pass
+
+
+class AgentMemberManager(driver_base.BaseMemberManager):
+
+    def create(self, context, obj):
+        pass
+
+    def update(self, context, obj_old, obj):
+        pass
+
+    def delete(self, context, obj):
+        pass
+
+
+class AgentHealthMonitorManager(driver_base.BaseHealthMonitorManager):
+
+    def create(self, context, obj):
+        pass
+
+    def update(self, context, obj_old, obj):
+        pass
+
+    def delete(self, context, obj):
+        pass
+
