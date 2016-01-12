@@ -1,0 +1,5 @@
+---
+upgrade:
+  - The Linuxbridge agent VXLAN vxlan_group option has been deprecated in favor
+    of ml2_type_vxlan vxlan_group option. The VXLAN vxlan_group will be removed
+    in the 'O' cycle.

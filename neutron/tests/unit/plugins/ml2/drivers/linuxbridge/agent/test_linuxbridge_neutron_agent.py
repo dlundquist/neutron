@@ -16,6 +16,7 @@ import collections
 import sys
 
 import mock
+import netaddr
 from oslo_config import cfg
 
 from neutron.agent.linux import bridge_lib
@@ -33,6 +34,7 @@ from neutron.tests import base
 
 LOCAL_IP = '192.168.0.33'
 LOCAL_IPV6 = '2001:db8:1::33'
+VXLAN_GROUP = '239.1.2.3/24'
 VXLAN_GROUPV6 = 'ff05::/120'
 PORT_1 = 'abcdef01-12ddssdfds-fdsfsd'
 DEVICE_1 = 'tapabcdef01-12'
@@ -537,7 +539,7 @@ class TestLinuxBridgeManager(base.BaseTestCase):
         self.lbm = get_linuxbridge_manager(
             BRIDGE_MAPPINGS, INTERFACE_MAPPINGS)
 
-    def test_local_ip_validation_with_valid_ip(self):
+    def test_get_local_ip_device_with_valid_ip(self):
         with mock.patch.object(ip_lib.IPWrapper,
                                'get_device_by_ip',
                                return_value=FAKE_DEFAULT_DEV):
@@ -545,7 +547,7 @@ class TestLinuxBridgeManager(base.BaseTestCase):
             result = self.lbm.get_local_ip_device()
             self.assertEqual(FAKE_DEFAULT_DEV, result)
 
-    def test_local_ip_validation_with_invalid_ip(self):
+    def test_get_local_ip_device_without_ip(self):
         with mock.patch.object(ip_lib.IPWrapper,
                                'get_device_by_ip',
                                return_value=None),\
@@ -557,30 +559,65 @@ class TestLinuxBridgeManager(base.BaseTestCase):
             self.assertEqual(1, log.call_count)
             exit.assert_called_once_with(1)
 
-    def _test_vxlan_group_validation(self, bad_local_ip, bad_vxlan_group):
+    def _test_local_ip_validation_failure(self, local_ip, vxlan_group):
+        net = netaddr.IPNetwork(vxlan_group)
         with mock.patch.object(ip_lib.IPWrapper,
                                'get_device_by_ip',
                                return_value=FAKE_DEFAULT_DEV),\
+                mock.patch.object(self.lbm, 'local_ip',
+                                  new_callable=mock.PropertyMock,
+                                  return_value=local_ip),\
+                mock.patch.object(self.lbm, 'vxlan_group',
+                                  new_callable=mock.PropertyMock,
+                                  return_value=net),\
                 mock.patch.object(sys, 'exit') as exit,\
                 mock.patch.object(linuxbridge_neutron_agent.LOG,
                                   'error') as log:
-            self.lbm.local_ip = bad_local_ip
-            cfg.CONF.set_override('vxlan_group', bad_vxlan_group, 'VXLAN')
-            self.lbm.validate_vxlan_group_with_local_ip()
+            self.lbm.validate_local_ip_with_vxlan_group()
             self.assertEqual(1, log.call_count)
             exit.assert_called_once_with(1)
 
-    def test_vxlan_group_validation_with_mismatched_local_ip(self):
-        self._test_vxlan_group_validation(LOCAL_IP, VXLAN_GROUPV6)
+    def test_local_ip_validation_failures(self):
+        self._test_local_ip_validation_failure(LOCAL_IP, VXLAN_GROUPV6)
+        self._test_local_ip_validation_failure(LOCAL_IPV6, VXLAN_GROUP)
+        self._test_local_ip_validation_failure('192.0.2.0.', VXLAN_GROUP)
 
-    def test_vxlan_group_validation_with_unicast_group(self):
-        self._test_vxlan_group_validation(LOCAL_IP, '240.0.0.0')
+    def test_vxlan_group_validation_accept_type_drv_opt(self):
+        cfg.CONF.set_override('vxlan_group', '239.1.2.3',
+                              'ml2_type_vxlan')
+        self.assertEqual(netaddr.IPNetwork('239.1.2.3'),
+                         self.lbm._choose_vxlan_group())
+
+    def test_vxlan_group_validation_accept_agent_opt(self):
+        cfg.CONF.set_override('vxlan_group', '239.1.2.3',
+                              'VXLAN')
+        self.assertEqual(netaddr.IPNetwork('239.1.2.3'),
+                         self.lbm._choose_vxlan_group())
+
+    def _test_vxlan_group_validation_failure(self):
+        with mock.patch.object(sys, 'exit') as exit,\
+                mock.patch.object(linuxbridge_neutron_agent.LOG,
+                                  'error') as log:
+            self.lbm._choose_vxlan_group()
+            self.assertEqual(1, log.call_count)
+            exit.assert_called_once_with(1)
+
+    def test_vxlan_group_validation_conflict(self):
+        cfg.CONF.set_override('vxlan_group', '239.0.0.1', 'ml2_type_vxlan')
+        cfg.CONF.set_override('vxlan_group', '239.1.2.3', 'VXLAN')
+        self._test_vxlan_group_validation_failure()
 
     def test_vxlan_group_validation_with_invalid_cidr(self):
-        self._test_vxlan_group_validation(LOCAL_IP, '224.0.0.1/')
+        cfg.CONF.set_override('vxlan_group', '224.0.0.1/', 'ml2_type_vxlan')
+        self._test_vxlan_group_validation_failure()
+
+    def test_vxlan_group_validation_with_unicast_group(self):
+        cfg.CONF.set_override('vxlan_group', '240.0.0.0', 'ml2_type_vxlan')
+        self._test_vxlan_group_validation_failure()
 
     def test_vxlan_group_validation_with_v6_unicast_group(self):
-        self._test_vxlan_group_validation(LOCAL_IPV6, '2001:db8::')
+        cfg.CONF.set_override('vxlan_group', '2001:db8::', 'ml2_type_vxlan')
+        self._test_vxlan_group_validation_failure()
 
     def test_get_existing_bridge_name(self):
         phy_net = 'physnet0'
@@ -617,7 +654,7 @@ class TestLinuxBridgeManager(base.BaseTestCase):
         self.assertIsNone(self.lbm.get_vxlan_device_name(vn_id + 1))
 
     def test_get_vxlan_group(self):
-        cfg.CONF.set_override('vxlan_group', '239.1.2.3/24', 'VXLAN')
+        self.lbm.vxlan_group = netaddr.IPNetwork('239.1.2.3/24')
         vn_id = p_const.MAX_VXLAN_VNI
         self.assertEqual('239.1.2.255', self.lbm.get_vxlan_group(vn_id))
         vn_id = 256
@@ -626,9 +663,8 @@ class TestLinuxBridgeManager(base.BaseTestCase):
         self.assertEqual('239.1.2.1', self.lbm.get_vxlan_group(vn_id))
 
     def test_get_vxlan_group_with_ipv6(self):
-        cfg.CONF.set_override('local_ip', LOCAL_IPV6, 'VXLAN')
         self.lbm.local_ip = LOCAL_IPV6
-        cfg.CONF.set_override('vxlan_group', VXLAN_GROUPV6, 'VXLAN')
+        self.lbm.vxlan_group = netaddr.IPNetwork(VXLAN_GROUPV6)
         vn_id = p_const.MAX_VXLAN_VNI
         self.assertEqual('ff05::ff', self.lbm.get_vxlan_group(vn_id))
         vn_id = 256
@@ -1173,17 +1209,15 @@ class TestLinuxBridgeManager(base.BaseTestCase):
 
     def _check_vxlan_mcast_supported(
             self, expected, vxlan_group, iproute_arg_supported):
-        cfg.CONF.set_override('vxlan_group', vxlan_group, 'VXLAN')
-        with mock.patch.object(
-                ip_lib, 'iproute_arg_supported',
-                return_value=iproute_arg_supported):
+        rv = netaddr.IPNetwork(vxlan_group)
+        with mock.patch.object(self.lbm, 'vxlan_group',
+                               new_callable=mock.PropertyMock,
+                               return_value=rv),\
+                mock.patch.object(ip_lib, 'iproute_arg_supported',
+                                  return_value=iproute_arg_supported):
             self.assertEqual(expected, self.lbm.vxlan_mcast_supported())
 
     def test_vxlan_mcast_supported(self):
-        self._check_vxlan_mcast_supported(
-            expected=False,
-            vxlan_group='',
-            iproute_arg_supported=True)
         self._check_vxlan_mcast_supported(
             expected=False,
             vxlan_group='224.0.0.1',

@@ -24,6 +24,8 @@ from neutron.db import model_base
 from neutron.plugins.common import constants as p_const
 from neutron.plugins.ml2.drivers import type_tunnel
 
+DEFAULT_VXLAN_GROUP = '224.0.0.1'
+
 LOG = log.getLogger(__name__)
 
 vxlan_opts = [
@@ -32,11 +34,11 @@ vxlan_opts = [
                 help=_("Comma-separated list of <vni_min>:<vni_max> tuples "
                        "enumerating ranges of VXLAN VNI IDs that are "
                        "available for tenant network allocation")),
-    cfg.StrOpt('vxlan_group',
-               help=_("Multicast group for VXLAN. When configured, will "
-                      "enable sending all broadcast traffic to this multicast "
-                      "group. When left unconfigured, will disable multicast "
-                      "VXLAN mode.")),
+    cfg.StrOpt('vxlan_group', default=DEFAULT_VXLAN_GROUP,
+               help=_("Multicast group(s) for VXLAN. A range of group "
+                      "addresses may be specified by using CIDR notation. "
+                      "When configured, will enable sending all broadcast "
+                      "traffic to this multicast group."))
 ]
 
 cfg.CONF.register_opts(vxlan_opts, "ml2_type_vxlan")

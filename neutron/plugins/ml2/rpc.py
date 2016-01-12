@@ -52,7 +52,7 @@ class RpcCallbacks(type_tunnel.TunnelRpcCallbackMixin):
     #   1.5 Support update_device_list and
     #       get_devices_details_list_and_failed_devices
     #   1.6 - Support get_tunnel_type_config
-    target = oslo_messaging.Target(version='1.5')
+    target = oslo_messaging.Target(version='1.6')
 
     def __init__(self, notifier, type_manager):
         self.setup_tunnel_callback_mixin(notifier, type_manager)

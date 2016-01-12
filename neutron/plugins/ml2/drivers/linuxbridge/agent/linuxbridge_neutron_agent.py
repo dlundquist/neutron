@@ -73,12 +73,55 @@ class LinuxBridgeManager(amb.CommonAgentManagerBase):
         self.ip = ip_lib.IPWrapper()
         # VXLAN related parameters:
         self.local_ip = cfg.CONF.VXLAN.local_ip
+        self.vxlan_group = self._choose_vxlan_group()
         self.vxlan_mode = lconst.VXLAN_NONE
         if cfg.CONF.VXLAN.enable_vxlan:
             device = self.get_local_ip_device()
-            self.validate_vxlan_group_with_local_ip()
+            self.validate_local_ip_with_vxlan_group()
             self.local_int = device.name
             self.check_vxlan_support()
+
+    def _choose_vxlan_group(self):
+        """
+        Attempt to determine where user defined VXLAN group. If vxlan_group is
+        a defined as a non default value in either ml2_type_vxlan or VXLAN use
+        that value. If both are defined with conflicting values that is a
+        configuration error.
+        """
+
+        type_group = cfg.CONF.ml2_type_vxlan.vxlan_group
+        agt_group = cfg.CONF.VXLAN.vxlan_group
+
+        if type_group != type_vxlan.DEFAULT_VXLAN_GROUP and \
+                agt_group != type_vxlan.DEFAULT_VXLAN_GROUP and \
+                type_group != agt_group:
+            LOG.error(_LE("Conflicting definitions of vxlan_group. "
+                          "VXLAN.vxlan_group: %(agt_group)s and "
+                          "ml2_type_vxlan.vxlan_group: %(type_group)s, "
+                          "please removed deprecated VXLAN.vxlan_group "
+                          "configuration parameter."),
+                      {'agt_group': agt_group, 'type_group': type_group})
+            sys.exit(1)
+
+        group = type_group
+        source = 'ml2_type_vxlan.vxlan_group'
+        if type_group == type_vxlan.DEFAULT_VXLAN_GROUP and \
+                agt_group != type_vxlan.DEFAULT_VXLAN_GROUP:
+            group = agt_group
+            source = 'VXLAN.vxlan_group'
+
+        try:
+            net = netaddr.IPNetwork(group)
+            if not net.is_multicast():
+                raise ValueError()
+        except (netaddr.core.AddrFormatError, ValueError):
+            LOG.error(_LE("Invalid %(source): %(group)s, must be an address "
+                          "or network (in CIDR notation) in a multicast "
+                          "range"),
+                      {'source': source, 'group': group})
+            sys.exit(1)
+        else:
+            return net
 
     def validate_interface_mappings(self):
         for physnet, interface in self.interface_mappings.items():
@@ -96,23 +139,20 @@ class LinuxBridgeManager(amb.CommonAgentManagerBase):
                           {'brq': bridge, 'net': physnet})
                 sys.exit(1)
 
-    def validate_vxlan_group_with_local_ip(self):
+    def validate_local_ip_with_vxlan_group(self):
         if not cfg.CONF.VXLAN.vxlan_group:
             return
         try:
             ip_addr = netaddr.IPAddress(self.local_ip)
             # Ensure the configured group address/range is valid and multicast
-            group_net = netaddr.IPNetwork(cfg.CONF.VXLAN.vxlan_group)
-            if not group_net.is_multicast():
-                raise ValueError()
-            if not ip_addr.version == group_net.version:
+            if not ip_addr.version == self.vxlan_group.version:
                 raise ValueError()
         except (netaddr.core.AddrFormatError, ValueError):
             LOG.error(_LE("Invalid VXLAN Group: %(group)s, must be an address "
                           "or network (in CIDR notation) in a multicast "
                           "range of the same address family as local_ip: "
                           "%(ip)s"),
-                      {'group': cfg.CONF.VXLAN.vxlan_group,
+                      {'group': str(self.vxlan_group),
                        'ip': self.local_ip})
             sys.exit(1)
 
@@ -162,10 +202,9 @@ class LinuxBridgeManager(amb.CommonAgentManagerBase):
                             "incorrect vxlan device name"), segmentation_id)
 
     def get_vxlan_group(self, segmentation_id):
-        net = netaddr.IPNetwork(cfg.CONF.VXLAN.vxlan_group)
         # Map the segmentation ID to (one of) the group address(es)
-        return str(net.network +
-                   (int(segmentation_id) & int(net.hostmask)))
+        return str(self.vxlan_group.network +
+                   (int(segmentation_id) & int(self.vxlan_group.hostmask)))
 
     def get_deletable_bridges(self):
         bridge_list = bridge_lib.get_bridge_names()
@@ -572,10 +611,6 @@ class LinuxBridgeManager(amb.CommonAgentManagerBase):
             self.delete_interface(test_iface)
 
     def vxlan_mcast_supported(self):
-        if not cfg.CONF.VXLAN.vxlan_group:
-            LOG.warning(_LW('VXLAN muticast group(s) must be provided in '
-                            'vxlan_group option to enable VXLAN MCAST mode'))
-            return False
         if not ip_lib.iproute_arg_supported(
                 ['ip', 'link', 'add', 'type', 'vxlan'],
                 'proxy'):
