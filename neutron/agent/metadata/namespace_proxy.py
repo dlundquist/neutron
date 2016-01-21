@@ -128,7 +128,7 @@ class ProxyDaemon(daemon.Daemon):
             self.network_id,
             self.router_id)
         proxy = wsgi.Server('neutron-network-metadata-proxy')
-        proxy.start(handler, self.port)
+        proxy.start(handler, self.port, host='::')
 
         # Drop privileges after port bind
         super(ProxyDaemon, self).run()

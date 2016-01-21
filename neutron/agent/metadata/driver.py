@@ -42,14 +42,21 @@ class MetadataDriver(object):
             before_router_removed, resources.ROUTER, events.BEFORE_DELETE)
 
     @classmethod
-    def metadata_filter_rules(cls, port, mark):
+    def metadata_filter_v4_rules(cls, port, mark):
         return [('INPUT', '-m mark --mark %s/%s -j ACCEPT' %
                  (mark, constants.ROUTER_MARK_MASK)),
                 ('INPUT', '-p tcp -m tcp --dport %s '
                  '-j DROP' % port)]
 
     @classmethod
-    def metadata_mangle_rules(cls, mark):
+    def metadata_filter_v6_rules(cls, port, mark):
+        return [('INPUT', '-m mark --mark %s/%s -j ACCEPT' %
+                 (mark, constants.ROUTER_MARK_MASK)),
+                ('INPUT', '-p tcp -m tcp --dport %s '
+                 '-j DROP' % port)]
+
+    @classmethod
+    def metadata_mangle_v4_rules(cls, mark):
         return [('PREROUTING', '-d 169.254.169.254/32 '
                  '-i %(interface_name)s '
                  '-p tcp -m tcp --dport 80 '
@@ -59,8 +66,27 @@ class MetadataDriver(object):
                   'mask': constants.ROUTER_MARK_MASK})]
 
     @classmethod
-    def metadata_nat_rules(cls, port):
+    def metadata_mangle_v6_rules(cls, mark):
+        return [('PREROUTING', '-d ::ffff:169.254.169.254/128 '
+                 '-i %(interface_name)s '
+                 '-p tcp -m tcp --dport 80 '
+                 '-j MARK --set-xmark %(value)s/%(mask)s' %
+                 {'interface_name': namespaces.INTERNAL_DEV_PREFIX + '+',
+                  'value': mark,
+                  'mask': constants.ROUTER_MARK_MASK})]
+
+    @classmethod
+    def metadata_nat_v4_rules(cls, port):
         return [('PREROUTING', '-d 169.254.169.254/32 '
+                 '-i %(interface_name)s '
+                 '-p tcp -m tcp --dport 80 -j REDIRECT '
+                 '--to-port %(port)s' %
+                 {'interface_name': namespaces.INTERNAL_DEV_PREFIX + '+',
+                  'port': port})]
+
+    @classmethod
+    def metadata_nat_v6_rules(cls, port):
+        return [('PREROUTING', '-d ::ffff:169.254.169.254/128 '
                  '-i %(interface_name)s '
                  '-p tcp -m tcp --dport 80 -j REDIRECT '
                  '--to-port %(port)s' %
@@ -143,13 +169,20 @@ class MetadataDriver(object):
 def after_router_added(resource, event, l3_agent, **kwargs):
     router = kwargs['router']
     proxy = l3_agent.metadata_driver
-    for c, r in proxy.metadata_filter_rules(proxy.metadata_port,
+    for c, r in proxy.metadata_filter_v4_rules(proxy.metadata_port,
                                            proxy.metadata_access_mark):
         router.iptables_manager.ipv4['filter'].add_rule(c, r)
-    for c, r in proxy.metadata_mangle_rules(proxy.metadata_access_mark):
+    for c, r in proxy.metadata_filter_v6_rules(proxy.metadata_port,
+                                           proxy.metadata_access_mark):
+        router.iptables_manager.ipv6['filter'].add_rule(c, r)
+    for c, r in proxy.metadata_mangle_v4_rules(proxy.metadata_access_mark):
         router.iptables_manager.ipv4['mangle'].add_rule(c, r)
-    for c, r in proxy.metadata_nat_rules(proxy.metadata_port):
+    for c, r in proxy.metadata_mangle_v6_rules(proxy.metadata_access_mark):
+        router.iptables_manager.ipv6['mangle'].add_rule(c, r)
+    for c, r in proxy.metadata_nat_v4_rules(proxy.metadata_port):
         router.iptables_manager.ipv4['nat'].add_rule(c, r)
+    for c, r in proxy.metadata_nat_v6_rules(proxy.metadata_port):
+        router.iptables_manager.ipv6['nat'].add_rule(c, r)
     router.iptables_manager.apply()
 
     if not isinstance(router, ha_router.HaRouter):
