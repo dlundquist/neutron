@@ -421,6 +421,13 @@ class RpcApiTestCase(base.BaseTestCase):
                            host='fake_host',
                            version='1.4')
 
+    def test_get_tunnel_type_config(self):
+        rpcapi = agent_rpc.PluginApi(topics.PLUGIN)
+        self._test_rpc_api(rpcapi, None,
+                           'get_tunnel_type_config', rpc_method='call',
+                           tunnel_type=None,
+                           version='1.6')
+
     def test_update_device_up(self):
         rpcapi = agent_rpc.PluginApi(topics.PLUGIN)
         self._test_rpc_api(rpcapi, None,

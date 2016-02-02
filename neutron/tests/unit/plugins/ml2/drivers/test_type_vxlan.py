@@ -100,3 +100,8 @@ class VxlanTypeRpcCallbackTest(base_type_tunnel.TunnelRpcCallbackTestMixin,
                                testlib_api.SqlTestCase):
     DRIVER_CLASS = type_vxlan.VxlanTypeDriver
     TYPE = p_const.TYPE_VXLAN
+
+    def test_get_tunnel_type_config(self):
+        kwargs = {'tunnel_type': self.TYPE}
+        details = self.callbacks.get_tunnel_type_config('fake_context', **kwargs)
+        self.assertIn('vxlan_group', details)

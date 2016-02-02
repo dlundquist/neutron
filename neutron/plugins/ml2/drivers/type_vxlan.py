@@ -100,3 +100,6 @@ class VxlanTypeDriver(type_tunnel.EndpointTunnelTypeDriver):
     def get_mtu(self, physical_network=None):
         mtu = super(VxlanTypeDriver, self).get_mtu()
         return mtu - p_const.VXLAN_ENCAP_OVERHEAD if mtu else 0
+
+    def get_config(self):
+        return {'vxlan_group': cfg.CONF.ml2_type_vxlan.vxlan_group}

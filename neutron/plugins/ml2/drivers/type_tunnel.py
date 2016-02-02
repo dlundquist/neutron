@@ -251,6 +251,13 @@ class TunnelTypeDriver(helpers.SegmentTypeDriver):
             mtu.append(cfg.CONF.ml2.path_mtu)
         return min(mtu) if mtu else 0
 
+    def get_config(self):
+        """Get configuration for the type_driver
+
+        :returns a dict of tunnel type specific configuration options
+        """
+        return {}
+
 
 class EndpointTunnelTypeDriver(TunnelTypeDriver):
 
@@ -379,6 +386,22 @@ class TunnelRpcCallbackMixin(object):
             self._notifier.tunnel_update(rpc_context, tunnel.ip_address,
                                          tunnel_type)
             # Return the list of tunnels IP's to the agent
+            return entry
+        else:
+            msg = _("Network type value '%s' not supported") % tunnel_type
+            raise exc.InvalidInput(error_message=msg)
+
+    def get_tunnel_type_config(self, rpc_context, **kwargs):
+        LOG.info("get_tunnel_type_config()")
+
+        tunnel_type = kwargs.get('tunnel_type')
+        if not tunnel_type:
+            msg = _("Network type value needed by the ML2 plugin")
+            raise exc.InvalidInput(error_message=msg)
+
+        driver = self._type_manager.drivers.get(tunnel_type)
+        if driver:
+            entry = driver.obj.get_config()
             return entry
         else:
             msg = _("Network type value '%s' not supported") % tunnel_type

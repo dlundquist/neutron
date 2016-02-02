@@ -51,6 +51,7 @@ class RpcCallbacks(type_tunnel.TunnelRpcCallbackMixin):
     #   1.4 tunnel_sync rpc signature upgrade to obtain 'host'
     #   1.5 Support update_device_list and
     #       get_devices_details_list_and_failed_devices
+    #   1.6 - Support get_tunnel_type_config
     target = oslo_messaging.Target(version='1.5')
 
     def __init__(self, notifier, type_manager):

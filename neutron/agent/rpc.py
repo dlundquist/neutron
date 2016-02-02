@@ -97,6 +97,7 @@ class PluginApi(object):
         1.4 - tunnel_sync rpc signature upgrade to obtain 'host'
         1.5 - Support update_device_list and
               get_devices_details_list_and_failed_devices
+        1.6 - Support get_tunnel_type_config
     '''
 
     def __init__(self, topic):
@@ -123,6 +124,16 @@ class PluginApi(object):
                 self.get_device_details(context, device, agent_id, host)
                 for device in devices
             ]
+        return res
+
+    def get_tunnel_type_config(self, context, tunnel_type=None):
+        try:
+            cctxt = self.client.prepare(version='1.6')
+            res = cctxt.call(context, 'get_tunnel_type_config',
+                             tunnel_type=tunnel_type)
+        except oslo_messaging.UnsupportedVersion:
+            LOG.warn(_LW('Tunnel configuration requires a server upgrade.'))
+            res = {}
         return res
 
     def get_devices_details_list_and_failed_devices(self, context, devices,
